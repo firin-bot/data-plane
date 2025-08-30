@@ -8,6 +8,7 @@ use twitch_api::eventsub::{
     EventsubWebsocketData,
     Message
 };
+use twitch_api::eventsub::channel::ChannelChatMessageV1Payload;
 use twitch_api::TwitchClient;
 use twitch_api::twitch_oauth2::AppAccessToken;
 use twitch_api::types::UserId;
@@ -129,12 +130,9 @@ async fn handle_message(data_state: &mut DataState<'_>, msg: tungstenite::Messag
                                     payload.chatter_user_login,
                                     payload.message
                                 );
-                                data_state.client.helix.send_chat_message(
-                                    payload.broadcaster_user_id,
-                                    my_id,
-                                    "hai",
-                                    &data_state.app_token.clone().expect("access_token should be set")
-                                ).await?;
+                                if let Some(cmd) = parse_command(&payload) {
+                                    handle_command(data_state, cmd).await?;
+                                }
                             }
                         }
                     },
@@ -151,4 +149,36 @@ async fn handle_message(data_state: &mut DataState<'_>, msg: tungstenite::Messag
         },
         _ => Ok(())
     }
+}
+
+struct Command<'a> {
+    broadcaster_id: UserId,
+    name: &'a str,
+    rest: &'a str
+}
+
+fn parse_command(payload: &ChannelChatMessageV1Payload) -> Option<Command<'_>> {
+    if !payload.message.text.starts_with('!') {
+        None
+    } else {
+        let trimmed = &payload.message.text[1..];
+        let mut parts = trimmed.splitn(2, ' ');
+        let name = parts.next()?;
+        let rest = parts.next().unwrap_or("");
+        Some(Command {
+            broadcaster_id: payload.broadcaster_user_id.clone(),
+            name,
+            rest
+        })
+    }
+}
+
+async fn handle_command(data_state: &mut DataState<'_>, cmd: Command<'_>) -> Result<()> {
+    data_state.client.helix.send_chat_message(
+        cmd.broadcaster_id,
+        data_state.my_id.clone().expect("my_id should be set"),
+        "hai",
+        &data_state.app_token.clone().expect("access_token should be set")
+    ).await?;
+    Ok(())
 }
