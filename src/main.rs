@@ -5,13 +5,20 @@ use tokio::time::{Duration, Instant};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
 use twitch_api::eventsub::{
     Event,
-    EventsubWebsocketData
+    EventsubWebsocketData,
+    Message
 };
+use twitch_api::TwitchClient;
+use twitch_api::twitch_oauth2::AppAccessToken;
+use twitch_api::types::UserId;
 
-struct DataState {
+struct DataState<'a> {
+    client: TwitchClient<'a, reqwest::Client>,
     control_host: String,
     control_port: u16,
-    control_token: String
+    control_token: String,
+    app_token: Option<AppAccessToken>,
+    my_id: Option<UserId>
 }
 
 fn jitter(d: Duration, percent: f64) -> Duration {
@@ -35,10 +42,13 @@ async fn main() -> Result<()> {
     let request = "wss://eventsub.wss.twitch.tv/ws".into_client_request()?;
     let mut backoff = MIN_BACKOFF;
 
-    let data_state = DataState {
+    let mut data_state = DataState {
+        client: TwitchClient::default(),
         control_host,
         control_port,
-        control_token
+        control_token,
+        app_token: None,
+        my_id: None
     };
 
     loop {
@@ -56,7 +66,7 @@ async fn main() -> Result<()> {
         };
 
         while let Some(Ok(msg)) = stream.next().await {
-            if let Err(e) = handle_message(&data_state, msg).await {
+            if let Err(e) = handle_message(&mut data_state, msg).await {
                 log::error!("{e}");
                 break
             }
@@ -75,7 +85,7 @@ async fn main() -> Result<()> {
     }
 }
 
-async fn handle_message(data_state: &DataState, msg: tungstenite::Message) -> Result<()> {
+async fn handle_message(data_state: &mut DataState<'_>, msg: tungstenite::Message) -> Result<()> {
     match msg {
         tungstenite::Message::Text(text) => {
             match Event::parse_websocket(&text)? {
@@ -90,18 +100,47 @@ async fn handle_message(data_state: &DataState, msg: tungstenite::Message) -> Re
                         data_state.control_host,
                         data_state.control_port
                     ))?;
-                    let res = client
+                    let (client_id, client_secret, my_id) = client
                         .post(url)
                         .bearer_auth(data_state.control_token.clone())
                         .body(payload.session.id.as_ref().to_owned())
-                        .send().await?;
-                    log::info!("{res:?}");
+                        .send().await?
+                        .error_for_status()?
+                        .json().await?;
+                    data_state.app_token = Some(AppAccessToken::get_app_access_token(
+                        &data_state.client,
+                        client_id,
+                        client_secret,
+                        vec![]
+                    ).await?);
+                    data_state.my_id = my_id;
+                    log::info!("{:?}", data_state.app_token);
                 },
                 EventsubWebsocketData::Notification {
                     payload,
                     ..
-                } => {
-                    log::info!("{payload:#?}");
+                } => match payload {
+                    Event::ChannelChatMessageV1(payload) => {
+                        if let Message::Notification(payload) = payload.message {
+                            if let Some(my_id) = &data_state.my_id && payload.chatter_user_id != my_id {
+                                log::info!(
+                                    "channel chat message in #{} from {}: {:?}",
+                                    payload.broadcaster_user_login,
+                                    payload.chatter_user_login,
+                                    payload.message
+                                );
+                                data_state.client.helix.send_chat_message(
+                                    payload.broadcaster_user_id,
+                                    my_id,
+                                    "hai",
+                                    &data_state.app_token.clone().expect("access_token should be set")
+                                ).await?;
+                            }
+                        }
+                    },
+                    _ => {
+                        log::info!("unhandled notification payload: {payload:#?}");
+                    }
                 }
                 _ => {}
             }

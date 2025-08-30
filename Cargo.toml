@@ -10,7 +10,7 @@ env_logger = { version = "0.11.8", default-features = false, features = ["auto-c
 futures-util = { version = "0.3.31", default-features = false }
 log = { version = "0.4.27", default-features = false }
 rand = { version = "0.9.2", default-features = false }
-reqwest = { version = "0.12.23", default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "0.12.23", default-features = false, features = ["json", "rustls-tls"] }
 tokio = { version = "1.47.1", default-features = false, features = ["macros", "rt-multi-thread"] }
 tokio-tungstenite = { version = "0.27.0", default-features = false, features = ["__rustls-tls", "connect", "rustls", "rustls-tls-native-roots", "rustls-tls-webpki-roots", "tokio-rustls"] }
 tungstenite = { version = "0.27.0", default-features = false, features = ["__rustls-tls"] }
