@@ -1,14 +1,16 @@
-use anyhow::{Context, Result};
+mod graph;
+
+use anyhow::Context as _;
+use anyhow::Result;
 use futures_util::StreamExt as _;
 use rand::Rng as _;
-use tokio::time::{Duration, Instant};
+use tokio::time::Duration;
+use tokio::time::Instant;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
-use twitch_api::eventsub::{
-    Event,
-    EventsubWebsocketData,
-    Message
-};
 use twitch_api::eventsub::channel::ChannelChatMessageV1Payload;
+use twitch_api::eventsub::Event;
+use twitch_api::eventsub::EventsubWebsocketData;
+use twitch_api::eventsub::Message;
 use twitch_api::TwitchClient;
 use twitch_api::twitch_oauth2::AppAccessToken;
 use twitch_api::types::UserId;
@@ -151,6 +153,7 @@ async fn handle_message(data_state: &mut DataState<'_>, msg: tungstenite::Messag
     }
 }
 
+#[derive(Debug)]
 struct Command<'a> {
     broadcaster_id: UserId,
     name: &'a str,
@@ -161,6 +164,7 @@ fn parse_command(payload: &ChannelChatMessageV1Payload) -> Option<Command<'_>> {
     if !payload.message.text.starts_with('!') {
         None
     } else {
+        #[allow(clippy::string_slice)]
         let trimmed = &payload.message.text[1..];
         let mut parts = trimmed.splitn(2, ' ');
         let name = parts.next()?;
@@ -173,7 +177,8 @@ fn parse_command(payload: &ChannelChatMessageV1Payload) -> Option<Command<'_>> {
     }
 }
 
-async fn handle_command(data_state: &mut DataState<'_>, cmd: Command<'_>) -> Result<()> {
+async fn handle_command(data_state: &DataState<'_>, cmd: Command<'_>) -> Result<()> {
+    log::info!("{cmd:?}");
     data_state.client.helix.send_chat_message(
         cmd.broadcaster_id,
         data_state.my_id.clone().expect("my_id should be set"),
