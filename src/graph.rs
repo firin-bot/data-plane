@@ -35,6 +35,7 @@ pub enum Node {
     Constant(Type),
     Comparison(ComparisonType),
     Branch,
+    Select,
 
     CommandEvent,
 
@@ -64,6 +65,20 @@ impl Node {
                     ty: Type::Boolean,
                     label: "Condition".into()
                 }
+            ],
+            Self::Select => smallvec![
+                Input {
+                    ty: Type::Boolean,
+                    label: "Condition".into()
+                },
+                Input {
+                    ty: Type::Generic1,
+                    label: "True".into()
+                },
+                Input {
+                    ty: Type::Generic1,
+                    label: "False".into()
+                },
             ],
 
             Self::CommandEvent => smallvec![],
@@ -103,6 +118,12 @@ impl Node {
                 Output {
                     ty: Type::Execution,
                     label: "False".into()
+                }
+            ],
+            Self::Select => smallvec![
+                Output {
+                    ty: Type::Generic1,
+                    label: "Result".into()
                 }
             ],
 
