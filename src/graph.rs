@@ -15,7 +15,12 @@ pub enum Type {
 
 #[derive(Debug)]
 pub enum ComparisonType {
-    EQ
+    EQ,
+    NE,
+    GT,
+    GE,
+    LT,
+    LE
 }
 
 #[derive(Debug)]
