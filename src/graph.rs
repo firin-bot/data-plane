@@ -8,9 +8,27 @@ pub enum Type {
     Boolean,
     Integer,
     Real,
-    Char,
+    Character,
     List(Box<Type>),
     Generic1
+}
+
+impl Type {
+    pub fn label(&self) -> SmallString<[u8; 32]> {
+        match self {
+            Self::Execution => "Execution".into(),
+            Self::Boolean => "Boolean".into(),
+            Self::Integer => "Integer".into(),
+            Self::Real => "Real".into(),
+            Self::Character => "Character".into(),
+            Self::List(ty) => {
+                let mut s = SmallString::from("List of ");
+                s.push_str(&ty.label());
+                s
+            },
+            Self::Generic1 => "<T>".into()
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -21,6 +39,19 @@ pub enum ComparisonType {
     GE,
     LT,
     LE
+}
+
+impl ComparisonType {
+    pub fn label(&self) -> SmallString<[u8; 32]> {
+        match self {
+            Self::EQ => "Equal".into(),
+            Self::NE => "Not Equal".into(),
+            Self::GT => "Greater Than".into(),
+            Self::GE => "Greater Than or Equal".into(),
+            Self::LT => "Less Than".into(),
+            Self::LE => "Less Than or Equal".into()
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -39,8 +70,8 @@ pub struct Output {
 pub enum Node {
     Constant(Type),
     Comparison(ComparisonType),
-    Branch,
     Select,
+    Branch,
 
     CommandEvent,
 
@@ -48,7 +79,28 @@ pub enum Node {
 }
 
 impl Node {
-    pub fn inputs(&self) -> <SmallVec<[Input; 8]> as IntoIterator>::IntoIter {
+    pub fn label(&self) -> SmallString<[u8; 64]> {
+        match self {
+            Self::Constant(ty) => {
+                let mut s = SmallString::from(ty.label().as_ref());
+                s.push_str(" Constant");
+                s
+            },
+            Self::Comparison(cty) => {
+                let mut s = SmallString::from(cty.label().as_ref());
+                s.push_str(" Comparison");
+                s
+            },
+            Self::Select => "Select".into(),
+            Self::Branch => "Branch".into(),
+
+            Self::CommandEvent => "Command".into(),
+
+            Self::SendMessageAction => "Send Message".into()
+        }
+    }
+
+    pub fn inputs(&self) -> <SmallVec<[Input; 4]> as IntoIterator>::IntoIter {
         match self {
             Self::Constant(_) => smallvec![],
             Self::Comparison(_) => smallvec![
@@ -59,16 +111,6 @@ impl Node {
                 Input {
                     ty: Type::Generic1,
                     label: "Second".into()
-                }
-            ],
-            Self::Branch => smallvec![
-                Input {
-                    ty: Type::Execution,
-                    label: "Execution".into()
-                },
-                Input {
-                    ty: Type::Boolean,
-                    label: "Condition".into()
                 }
             ],
             Self::Select => smallvec![
@@ -85,6 +127,16 @@ impl Node {
                     label: "False".into()
                 },
             ],
+            Self::Branch => smallvec![
+                Input {
+                    ty: Type::Execution,
+                    label: "Execution".into()
+                },
+                Input {
+                    ty: Type::Boolean,
+                    label: "Condition".into()
+                }
+            ],
 
             Self::CommandEvent => smallvec![],
 
@@ -94,14 +146,14 @@ impl Node {
                     label: "Execution".into()
                 },
                 Input {
-                    ty: Type::List(Box::new(Type::Char)),
+                    ty: Type::List(Box::new(Type::Character)),
                     label: "Message".into()
                 }
             ]
         }.into_iter()
     }
 
-    pub fn outputs(&self) -> <SmallVec<[Output; 8]> as IntoIterator>::IntoIter {
+    pub fn outputs(&self) -> <SmallVec<[Output; 4]> as IntoIterator>::IntoIter {
         match self {
             Self::Constant(ty) => smallvec![
                 Output {
@@ -115,6 +167,12 @@ impl Node {
                     label: "Result".into()
                 }
             ],
+            Self::Select => smallvec![
+                Output {
+                    ty: Type::Generic1,
+                    label: "Result".into()
+                }
+            ],
             Self::Branch => smallvec![
                 Output {
                     ty: Type::Execution,
@@ -125,12 +183,6 @@ impl Node {
                     label: "False".into()
                 }
             ],
-            Self::Select => smallvec![
-                Output {
-                    ty: Type::Generic1,
-                    label: "Result".into()
-                }
-            ],
 
             Self::CommandEvent => smallvec![
                 Output {
@@ -138,7 +190,7 @@ impl Node {
                     label: "Execution".into()
                 },
                 Output {
-                    ty: Type::List(Box::new(Type::Char)),
+                    ty: Type::List(Box::new(Type::Character)),
                     label: "Name".into()
                 }
             ],
