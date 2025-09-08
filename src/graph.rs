@@ -31,6 +31,32 @@ impl Type {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum Value {
+    Execution(bool),
+    Boolean(bool),
+    Integer(i64),
+    Real(f64),
+    Character(char),
+    List(Vec<Value>)
+}
+
+impl Value {
+    const fn get_execution(&self) -> Option<bool> {
+        if let Self::Execution(b) = self { Some(*b) } else { None }
+    }
+
+    const fn get_boolean(&self) -> Option<bool> {
+        if let Self::Boolean(b) = self { Some(*b) } else { None }
+    }
+}
+
+impl PartialOrd for Value {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        todo!()
+    }
+}
+
 #[derive(Debug)]
 pub enum ComparisonType {
     EQ,
@@ -68,24 +94,24 @@ pub struct Output {
 
 #[derive(Debug)]
 pub enum Node {
-    Constant(Type),
     Comparison(ComparisonType),
     Select,
     Branch,
+
+    Constant(Type),
 
     CommandEvent,
 
     SendMessageAction
 }
 
+pub enum EvalError {
+    Unexpected
+}
+
 impl Node {
     pub fn label(&self) -> SmallString<[u8; 64]> {
         match self {
-            Self::Constant(ty) => {
-                let mut s = SmallString::from(ty.label().as_ref());
-                s.push_str(" Constant");
-                s
-            },
             Self::Comparison(cty) => {
                 let mut s = SmallString::from(cty.label().as_ref());
                 s.push_str(" Comparison");
@@ -93,6 +119,12 @@ impl Node {
             },
             Self::Select => "Select".into(),
             Self::Branch => "Branch".into(),
+
+            Self::Constant(ty) => {
+                let mut s = SmallString::from(ty.label().as_ref());
+                s.push_str(" Constant");
+                s
+            },
 
             Self::CommandEvent => "Command".into(),
 
@@ -102,7 +134,6 @@ impl Node {
 
     pub fn inputs(&self) -> <SmallVec<[Input; 4]> as IntoIterator>::IntoIter {
         match self {
-            Self::Constant(_) => smallvec![],
             Self::Comparison(_) => smallvec![
                 Input {
                     ty: Type::Generic1,
@@ -137,6 +168,8 @@ impl Node {
                     label: "Condition".into()
                 }
             ],
+
+            Self::Constant(_) => smallvec![],
 
             Self::CommandEvent => smallvec![],
 
@@ -197,5 +230,42 @@ impl Node {
 
             Self::SendMessageAction => smallvec![]
         }.into_iter()
+    }
+
+    pub fn evaluate(&self, inputs: &[Value]) -> Result<<SmallVec<[Value; 4]> as IntoIterator>::IntoIter, EvalError> {
+        match self {
+            Self::Comparison(cty) => {
+                inputs[0].partial_cmp(&inputs[1]).map(|ord| smallvec![
+                    Value::Boolean(match cty {
+                        ComparisonType::EQ => ord.is_eq(),
+                        ComparisonType::NE => ord.is_ne(),
+                        ComparisonType::GT => ord.is_gt(),
+                        ComparisonType::GE => ord.is_ge(),
+                        ComparisonType::LT => ord.is_lt(),
+                        ComparisonType::LE => ord.is_le(),
+                    })
+                ]).ok_or(EvalError::Unexpected)
+            },
+            Self::Select => {
+                inputs[0].get_boolean().map(|b| smallvec![
+                    if b {
+                        inputs[1].clone()
+                    } else {
+                        inputs[2].clone()
+                    }
+                ]).ok_or(EvalError::Unexpected)
+            },
+            Self::Branch => {
+                todo!()
+            },
+
+            Self::Constant(ty) => {
+                todo!()
+            }
+
+            _ => {
+                todo!()
+            }
+        }.map(|v| v.into_iter())
     }
 }
