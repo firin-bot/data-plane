@@ -57,19 +57,19 @@ pub enum Type {
 }
 
 impl Type {
-    pub fn boolean() -> Self {
+    pub const fn boolean() -> Self {
         Self::App(TypeCon::Boolean, vec![])
     }
 
-    pub fn character() -> Self {
+    pub const fn character() -> Self {
         Self::App(TypeCon::Character, vec![])
     }
 
-    pub fn integer() -> Self {
+    pub const fn integer() -> Self {
         Self::App(TypeCon::Integer, vec![])
     }
 
-    pub fn real() -> Self {
+    pub const fn real() -> Self {
         Self::App(TypeCon::Real, vec![])
     }
 
@@ -81,11 +81,11 @@ impl Type {
         Self::App(TypeCon::Arrow, vec![a, b])
     }
 
-    pub fn tuple(elem_tys: Vec<Self>) -> Self {
+    pub const fn tuple(elem_tys: Vec<Self>) -> Self {
         Self::App(TypeCon::Tuple(elem_tys.len()), elem_tys)
     }
 
-    pub fn unit() -> Self {
+    pub const fn unit() -> Self {
         Self::tuple(vec![])
     }
 
@@ -101,12 +101,12 @@ pub struct Scheme {
 }
 
 #[derive(Debug)]
-pub struct TypeCtx {
+pub struct TypeContext {
     next: u32
 }
 
-impl TypeCtx {
-    pub fn fresh_var(&mut self) -> TypeVar {
+impl TypeContext {
+    pub const fn fresh_var(&mut self) -> TypeVar {
         let v = self.next;
         self.next += 1;
         TypeVar(v)
@@ -169,4 +169,10 @@ impl Node {
             }
         }
     }
+}
+
+#[derive(Debug)]
+pub struct NodeInstance {
+    pub node: Node,
+    pub ty: Type
 }
