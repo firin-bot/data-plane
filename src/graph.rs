@@ -1,3 +1,10 @@
+use anyhow::Result;
+use petgraph::acyclic::Acyclic;
+use petgraph::data::Build;
+use petgraph::stable_graph::NodeIndex;
+use petgraph::stable_graph::StableDiGraph;
+use petgraph::visit::EdgeRef;
+use petgraph::visit::IntoEdgeReferences;
 use std::collections::HashMap;
 
 #[derive(Debug)]
@@ -160,7 +167,7 @@ impl Op {
             Self::Constant(v) => {
                 Scheme {
                     vars: vec![],
-                    ty: Type::singleton(v.ty())
+                    ty: v.ty()
                 }
             },
             Self::Identity => {
@@ -200,5 +207,43 @@ impl Context {
         let v = self.next;
         self.next += 1;
         TypeVar(v)
+    }
+}
+
+#[derive(Debug)]
+pub struct Port(usize);
+
+#[derive(Debug)]
+pub struct Edge {
+    from: Port,
+    to: Port
+}
+
+#[derive(Debug, Default)]
+pub struct Graph(pub Acyclic<StableDiGraph<Instance, Edge>>);
+
+impl Graph {
+    pub fn add(&mut self, inst: Instance) -> NodeIndex {
+        self.0.add_node(inst)
+    }
+
+    pub fn connect(&mut self, u: NodeIndex, from: usize, v: NodeIndex, to: usize) {
+        self.0.add_edge(u, v, Edge {
+            from: Port(from),
+            to: Port(to)
+        });
+    }
+
+    pub fn type_check(&mut self) -> Result<()> {
+        for e in self.0.edge_references() {
+            let u = e.source();
+            let v = e.target();
+            let edge = e.weight();
+
+            log::info!("{:?}", self.0[u]);
+            log::info!("{:?}", self.0[v]);
+            log::info!("{:?}", edge);
+        }
+        todo!()
     }
 }
