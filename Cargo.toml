@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = { version = "1.0.99", default-features = false }
+derive_more = { version = "2.0.1", default-features = false, features = ["deref", "deref_mut", "into_iterator"] }
 dotenvy = { version = "0.15.7", default-features = false }
 env_logger = { version = "0.11.8", default-features = false, features = ["auto-color", "humantime"] }
 futures-util = { version = "0.3.31", default-features = false }

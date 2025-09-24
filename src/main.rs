@@ -54,9 +54,9 @@ async fn main() -> Result<()> {
 
     let i0 = g.add(identity.instantiate(&mut ctx));
     let i1 = g.add(identity.instantiate(&mut ctx));
-    //let i2 = g.add(identity.instantiate(&mut ctx));
+    let i2 = g.add(identity.instantiate(&mut ctx));
     g.connect(i0, 0, i1, 0);
-    //g.connect(i1, 0, i2, 0);
+    g.connect(i1, 0, i2, 0);
 
     log::info!("{:?}", Dot::new(&g.0));
     g.type_check()?;

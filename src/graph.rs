@@ -1,5 +1,8 @@
 use anyhow::Context as _;
 use anyhow::Result;
+use derive_more::Deref;
+use derive_more::DerefMut;
+use derive_more::IntoIterator;
 use petgraph::acyclic::Acyclic;
 use petgraph::data::Build;
 use petgraph::data::DataMapMut;
@@ -21,7 +24,7 @@ impl Kind {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum TypeCon {
     // arity = 0
     Boolean,
@@ -67,7 +70,27 @@ pub enum Type {
     App(TypeCon, Vec<Type>)
 }
 
-pub type SubstitutionMap = HashMap<TypeVar, Type>;
+#[derive(Clone, Default, Deref, DerefMut, IntoIterator)]
+pub struct SubstitutionMap(HashMap<TypeVar, Type>);
+
+impl SubstitutionMap {
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self(HashMap::with_capacity(capacity))
+    }
+
+    pub fn compose_with(&mut self, s: &Self) {
+        for ty in self.values_mut() {
+            *ty = ty.substitute(s);
+        }
+        self.extend(s.clone());
+    }
+}
+
+impl core::iter::FromIterator<(TypeVar, Type)> for SubstitutionMap {
+    fn from_iter<I: IntoIterator<Item = (TypeVar, Type)>>(iter: I) -> Self {
+        Self(iter.into_iter().collect())
+    }
+}
 
 impl Type {
     pub const fn boolean() -> Self {
@@ -137,11 +160,22 @@ impl Type {
             Ok(core::iter::once((a, t.clone())).collect())
         }
 
+        log::info!("{t0:?}, {t1:?}");
+
         match (t0, t1) {
             (Self::Var(a), Self::Var(b)) if a == b => Ok(SubstitutionMap::default()),
             (Self::Var(a), t) => bind(*a, t),
             (t, Self::Var(a)) => bind(*a, t),
-            _ => todo!()
+            (Self::App(con0, a0), Self::App(con1, a1)) if con0 == con1 && a0.len() == a1.len() => {
+                let mut subs = SubstitutionMap::default();
+                for (x, y) in a0.iter().zip(a1) {
+                    let x = x.substitute(&subs);
+                    let y = y.substitute(&subs);
+                    subs.compose_with(&Self::unify(&x, &y)?);
+                }
+                Ok(subs)
+            },
+            _ => anyhow::bail!("type clash")
         }
     }
 }
@@ -287,7 +321,7 @@ impl Graph {
             let t0 = &u_tuple[edge.from.0].substitute(&subs);
             let t1 = &v_tuple[edge.to.0].substitute(&subs);
 
-            subs.extend(Type::unify(t0, t1)?);
+            subs.compose_with(&Type::unify(t0, t1)?);
         }
 
         let indices: Vec<_> = self.0.nodes_iter().collect();
