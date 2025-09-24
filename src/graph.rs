@@ -1,6 +1,8 @@
+use anyhow::Context as _;
 use anyhow::Result;
 use petgraph::acyclic::Acyclic;
 use petgraph::data::Build;
+use petgraph::data::DataMapMut;
 use petgraph::stable_graph::NodeIndex;
 use petgraph::stable_graph::StableDiGraph;
 use petgraph::visit::EdgeRef;
@@ -65,6 +67,8 @@ pub enum Type {
     App(TypeCon, Vec<Type>)
 }
 
+pub type SubstitutionMap = HashMap<TypeVar, Type>;
+
 impl Type {
     pub const fn boolean() -> Self {
         Self::App(TypeCon::Boolean, vec![])
@@ -102,13 +106,42 @@ impl Type {
         Self::tuple(vec![elem_ty])
     }
 
-    pub fn substitute(&self, subs: &HashMap<TypeVar, Type>) -> Self {
+    pub fn break_arrow(&self) -> Option<(&Self, &Self)> {
+        if let Self::App(TypeCon::Arrow, args) = self {
+            Some((&args[0], &args[1]))
+        } else {
+            None
+        }
+    }
+
+    pub fn break_tuple(&self) -> Option<&[Self]> {
+        if let Self::App(TypeCon::Tuple(_), args) = self {
+            Some(args)
+        } else {
+            None
+        }
+    }
+
+    pub fn substitute(&self, subs: &SubstitutionMap) -> Self {
         match self {
             Self::Var(v) => subs.get(v).unwrap_or(self).clone(),
             Self::App(con, args) => Self::App(
                 con.clone(),
                 args.iter().map(|a| a.substitute(subs)).collect()
             )
+        }
+    }
+
+    pub fn unify(t0: &Self, t1: &Self) -> Result<SubstitutionMap> {
+        fn bind(a: TypeVar, t: &Type) -> Result<SubstitutionMap> {
+            Ok(core::iter::once((a, t.clone())).collect())
+        }
+
+        match (t0, t1) {
+            (Self::Var(a), Self::Var(b)) if a == b => Ok(SubstitutionMap::default()),
+            (Self::Var(a), t) => bind(*a, t),
+            (t, Self::Var(a)) => bind(*a, t),
+            _ => todo!()
         }
     }
 }
@@ -121,7 +154,7 @@ pub struct Scheme {
 
 impl Scheme {
     pub fn instantiate(&self, ctx: &mut Context) -> Type {
-        let mut subs = HashMap::with_capacity(self.vars.len());
+        let mut subs = SubstitutionMap::with_capacity(self.vars.len());
         for v in &self.vars {
             subs.insert(*v, Type::Var(ctx.fresh_var()));
         }
@@ -167,7 +200,10 @@ impl Op {
             Self::Constant(v) => {
                 Scheme {
                     vars: vec![],
-                    ty: v.ty()
+                    ty: Type::arrow(
+                        Type::unit(),
+                        Type::singleton(v.ty())
+                    )
                 }
             },
             Self::Identity => {
@@ -211,7 +247,7 @@ impl Context {
 }
 
 #[derive(Debug)]
-pub struct Port(usize);
+pub struct Port(pub usize);
 
 #[derive(Debug)]
 pub struct Edge {
@@ -235,15 +271,32 @@ impl Graph {
     }
 
     pub fn type_check(&mut self) -> Result<()> {
+        let mut subs = SubstitutionMap::default();
+
         for e in self.0.edge_references() {
             let u = e.source();
             let v = e.target();
             let edge = e.weight();
 
-            log::info!("{:?}", self.0[u]);
-            log::info!("{:?}", self.0[v]);
-            log::info!("{:?}", edge);
+            let (_, u_out) = self.0[u].ty.break_arrow().context("failed to break `u` instance as Arrow")?;
+            let u_tuple = u_out.break_tuple().context("failed to break `u` output as Tuple")?;
+
+            let (v_in, _) = self.0[v].ty.break_arrow().context("failed to break `v` instance as Arrow")?;
+            let v_tuple = v_in.break_tuple().context("failed to break `v` output as Tuple")?;
+
+            let t0 = &u_tuple[edge.from.0].substitute(&subs);
+            let t1 = &v_tuple[edge.to.0].substitute(&subs);
+
+            subs.extend(Type::unify(t0, t1)?);
         }
-        todo!()
+
+        let indices: Vec<_> = self.0.nodes_iter().collect();
+        for i in indices {
+            if let Some(n) = self.0.node_weight_mut(i) {
+                n.ty = n.ty.substitute(&subs);
+            }
+        }
+
+        Ok(())
     }
 }

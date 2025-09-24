@@ -15,7 +15,7 @@ use twitch_api::TwitchClient;
 use twitch_api::twitch_oauth2::AppAccessToken;
 use twitch_api::types::UserId;
 
-use petgraph::dot::{Config, Dot};
+use petgraph::dot::Dot;
 
 struct DataState<'a> {
     client: TwitchClient<'a, reqwest::Client>,
@@ -42,21 +42,24 @@ async fn main() -> Result<()> {
 
     let mut ctx = graph::Context::default();
 
-    let constant = graph::Op::Constant(graph::Value::Character('H')).instantiate(&mut ctx);
-    let identity = graph::Op::Identity.instantiate(&mut ctx);
-
-    log::info!("{constant:?}");
-    log::info!("{identity:?}");
+    let constant = graph::Op::Constant(graph::Value::Character('H'));
+    let identity = graph::Op::Identity;
 
     let mut g = graph::Graph::default();
-    let nc = g.add(constant);
-    let ni = g.add(identity);
-    g.connect(nc, 0, ni, 0);
+    let n0 = g.add(constant.instantiate(&mut ctx));
+    let n1 = g.add(identity.instantiate(&mut ctx));
+    let n2 = g.add(identity.instantiate(&mut ctx));
+    g.connect(n0, 0, n1, 0);
+    g.connect(n1, 0, n2, 0);
+
+    let i0 = g.add(identity.instantiate(&mut ctx));
+    let i1 = g.add(identity.instantiate(&mut ctx));
+    //let i2 = g.add(identity.instantiate(&mut ctx));
+    g.connect(i0, 0, i1, 0);
+    //g.connect(i1, 0, i2, 0);
 
     log::info!("{:?}", Dot::new(&g.0));
-
     g.type_check()?;
-
     log::info!("{:?}", Dot::new(&g.0));
 
     return Ok(());
