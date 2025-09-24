@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 #[derive(Debug)]
 pub enum Kind {
     Type,
@@ -47,7 +49,7 @@ impl TypeCon {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct TypeVar(pub u32);
 
 #[derive(Clone, Debug)]
@@ -92,6 +94,16 @@ impl Type {
     pub fn singleton(elem_ty: Self) -> Self {
         Self::tuple(vec![elem_ty])
     }
+
+    pub fn substitute(&self, subs: &HashMap<TypeVar, Type>) -> Self {
+        match self {
+            Self::Var(v) => subs.get(v).unwrap_or(self).clone(),
+            Self::App(con, args) => Self::App(
+                con.clone(),
+                args.iter().map(|a| a.substitute(subs)).collect()
+            )
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -100,20 +112,17 @@ pub struct Scheme {
     pub ty: Type
 }
 
-#[derive(Debug)]
-pub struct TypeContext {
-    next: u32
-}
-
-impl TypeContext {
-    pub const fn fresh_var(&mut self) -> TypeVar {
-        let v = self.next;
-        self.next += 1;
-        TypeVar(v)
+impl Scheme {
+    pub fn instantiate(&self, ctx: &mut Context) -> Type {
+        let mut subs = HashMap::with_capacity(self.vars.len());
+        for v in &self.vars {
+            subs.insert(*v, Type::Var(ctx.fresh_var()));
+        }
+        self.ty.substitute(&subs)
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Value {
     Boolean(bool),
     Character(char),
@@ -139,22 +148,19 @@ impl Value {
     }
 }
 
-#[derive(Debug)]
-pub enum Node {
+#[derive(Clone, Debug)]
+pub enum Op {
     Constant(Value),
     Identity
 }
 
-impl Node {
-    fn scheme(&self) -> Scheme {
+impl Op {
+    pub fn scheme(&self) -> Scheme {
         match self {
             Self::Constant(v) => {
                 Scheme {
                     vars: vec![],
-                    ty: Type::arrow(
-                        Type::unit(),
-                        Type::singleton(v.ty())
-                    )
+                    ty: Type::singleton(v.ty())
                 }
             },
             Self::Identity => {
@@ -169,10 +175,30 @@ impl Node {
             }
         }
     }
+
+    pub fn instantiate(&self, ctx: &mut Context) -> Instance {
+        Instance {
+            op: self.clone(),
+            ty: self.scheme().instantiate(ctx)
+        }
+    }
 }
 
 #[derive(Debug)]
-pub struct NodeInstance {
-    pub node: Node,
+pub struct Instance {
+    pub op: Op,
     pub ty: Type
+}
+
+#[derive(Debug, Default)]
+pub struct Context {
+    next: u32
+}
+
+impl Context {
+    pub const fn fresh_var(&mut self) -> TypeVar {
+        let v = self.next;
+        self.next += 1;
+        TypeVar(v)
+    }
 }

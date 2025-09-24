@@ -34,6 +34,31 @@ async fn main() -> Result<()> {
     env_logger::init();
     dotenvy::dotenv().ok();
 
+
+
+    // graph stuff
+
+    let mut ctx = graph::Context::default();
+
+    let constant = graph::Op::Constant(graph::Value::Character('H'));
+    let identity = graph::Op::Identity;
+
+    log::info!("{:?}: {:?}", constant, constant.scheme());
+    log::info!("{:?}: {:?}", identity, identity.scheme());
+
+    let identity_instance = identity.instantiate(&mut ctx);
+    log::info!("{:?}: {:?}", identity_instance, identity_instance.ty);
+
+    let identity_instance = identity.instantiate(&mut ctx);
+    log::info!("{:?}: {:?}", identity_instance, identity_instance.ty);
+
+    let identity_instance = identity.instantiate(&mut ctx);
+    log::info!("{:?}: {:?}", identity_instance, identity_instance.ty);
+
+    return Ok(());
+
+
+
     let control_host  = std::env::var("CONTROL_HOST" ).context("missing CONTROL_HOST")?;
     let control_port  = std::env::var("CONTROL_PORT" ).context("missing CONTROL_PORT")?.parse::<u16>()?;
     let control_token = std::env::var("CONTROL_TOKEN").context("missing CONTROL_TOKEN")?;
