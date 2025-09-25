@@ -1,15 +1,16 @@
 use anyhow::Context as _;
+use anyhow::ensure;
 use anyhow::Result;
 use derive_more::Deref;
 use derive_more::DerefMut;
 use derive_more::IntoIterator;
 use petgraph::acyclic::Acyclic;
-use petgraph::data::Build;
-use petgraph::data::DataMapMut;
+use petgraph::data::Build as _;
+use petgraph::data::DataMapMut as _;
 use petgraph::stable_graph::NodeIndex;
 use petgraph::stable_graph::StableDiGraph;
-use petgraph::visit::EdgeRef;
-use petgraph::visit::IntoEdgeReferences;
+use petgraph::visit::EdgeRef as _;
+use petgraph::visit::IntoEdgeReferences as _;
 use std::collections::HashMap;
 
 #[derive(Debug)]
@@ -24,7 +25,7 @@ impl Kind {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TypeCon {
     // arity = 0
     Boolean,
