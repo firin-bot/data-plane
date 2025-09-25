@@ -1,5 +1,4 @@
 use anyhow::Context as _;
-use anyhow::ensure;
 use anyhow::Result;
 use derive_more::Deref;
 use derive_more::DerefMut;
@@ -132,7 +131,7 @@ impl Type {
 
     pub fn break_arrow(&self) -> Option<(&Self, &Self)> {
         if let Self::App(TypeCon::Arrow, args) = self {
-            Some((&args[0], &args[1]))
+            Some((args.first()?, args.get(1)?))
         } else {
             None
         }
