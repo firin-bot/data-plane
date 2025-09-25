@@ -319,8 +319,8 @@ impl Graph {
             let (v_in, _) = self.0[v].ty.break_arrow().context("failed to break `v` instance as Arrow")?;
             let v_tuple = v_in.break_tuple().context("failed to break `v` output as Tuple")?;
 
-            let t0 = &u_tuple[edge.from.0].substitute(&subs);
-            let t1 = &v_tuple[edge.to.0].substitute(&subs);
+            let t0 = &u_tuple.get(edge.from.0).context("`from` port out of bounds")?.substitute(&subs);
+            let t1 = &v_tuple.get(edge.to.0).context("`to` port out of bounds")?.substitute(&subs);
 
             subs.compose_with(&Type::unify(t0, t1)?);
         }
