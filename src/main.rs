@@ -40,27 +40,22 @@ async fn main() -> Result<()> {
 
     // graph stuff
 
-    let mut ctx = graph::Context::default();
+    let mut g = graph::Graph::new();
 
-    let constant = graph::Op::Constant(graph::Value::Character('H'));
-    let identity = graph::Op::Identity;
+    let constant1 = g.add(graph::Op::Constant(graph::Value::Integer(42)))?;
+    //let constant2 = g.add(graph::Op::Constant(graph::Value::Integer(69)))?;
+    let input_id  = g.add(graph::Op::Identity)?;
+    let add       = g.add(graph::Op::Add)?;
+    let id        = g.add(graph::Op::Identity)?;
 
-    let mut g = graph::Graph::default();
-    let n0 = g.add(constant.instantiate(&mut ctx));
-    let n1 = g.add(identity.instantiate(&mut ctx));
-    let n2 = g.add(identity.instantiate(&mut ctx));
-    g.connect(n0, 0, n1, 0);
-    g.connect(n1, 0, n2, 0);
+    g.connect(constant1, 0, add,     0);
+    g.connect(input_id,  0, add,     1);
+    g.connect(add,       0, id,      0);
+    g.connect(id,        0, g.ret(), 0);
 
-    let i0 = g.add(identity.instantiate(&mut ctx));
-    let i1 = g.add(identity.instantiate(&mut ctx));
-    let i2 = g.add(identity.instantiate(&mut ctx));
-    g.connect(i0, 0, i1, 0);
-    g.connect(i1, 0, i2, 0);
-
-    log::info!("{:?}", Dot::new(&g.0));
+    log::info!("{:?}", Dot::new(g.inner()));
     g.type_check()?;
-    log::info!("{:?}", Dot::new(&g.0));
+    log::info!("{:?}", Dot::new(g.inner()));
 
     return Ok(());
 

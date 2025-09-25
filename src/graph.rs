@@ -1,4 +1,5 @@
 use anyhow::Context as _;
+use anyhow::ensure;
 use anyhow::Result;
 use derive_more::Deref;
 use derive_more::DerefMut;
@@ -224,13 +225,25 @@ impl Value {
 
 #[derive(Clone, Debug)]
 pub enum Op {
+    Return,
     Constant(Value),
-    Identity
+    Identity,
+    Add
 }
 
 impl Op {
     pub fn scheme(&self) -> Scheme {
         match self {
+            Self::Return => {
+                let a = TypeVar(0);
+                Scheme {
+                    vars: vec![a],
+                    ty: Type::arrow(
+                        Type::singleton(Type::Var(a)),
+                        Type::unit()
+                    )
+                }
+            },
             Self::Constant(v) => {
                 Scheme {
                     vars: vec![],
@@ -246,6 +259,19 @@ impl Op {
                     vars: vec![a],
                     ty: Type::arrow(
                         Type::singleton(Type::Var(a)),
+                        Type::singleton(Type::Var(a))
+                    )
+                }
+            },
+            Self::Add => {
+                let a = TypeVar(0);
+                Scheme {
+                    vars: vec![a],
+                    ty: Type::arrow(
+                        Type::tuple(vec![
+                            Type::Var(a),
+                            Type::Var(a)
+                        ]),
                         Type::singleton(Type::Var(a))
                     )
                 }
@@ -289,16 +315,40 @@ pub struct Edge {
     to: Port
 }
 
-#[derive(Debug, Default)]
-pub struct Graph(pub Acyclic<StableDiGraph<Instance, Edge>>);
+#[derive(Debug)]
+pub struct Graph {
+    ctx: Context,
+    g: Acyclic<StableDiGraph<Instance, Edge>>,
+    ret: NodeIndex
+}
 
 impl Graph {
-    pub fn add(&mut self, inst: Instance) -> NodeIndex {
-        self.0.add_node(inst)
+    pub fn new() -> Self {
+        let mut ctx = Context::default();
+        let mut g: Acyclic<StableDiGraph<Instance, Edge>> = Default::default();
+        let ret = g.add_node(Op::Return.instantiate(&mut ctx));
+        Self {
+            ctx,
+            g,
+            ret
+        }
+    }
+
+    pub const fn inner(&self) -> &Acyclic<StableDiGraph<Instance, Edge>> {
+        &self.g
+    }
+
+    pub const fn ret(&self) -> NodeIndex {
+        self.ret
+    }
+
+    pub fn add(&mut self, op: Op) -> Result<NodeIndex> {
+        ensure!(!matches!(op, Op::Return), "cannot add more than one Return instance");
+        Ok(self.g.add_node(op.instantiate(&mut self.ctx)))
     }
 
     pub fn connect(&mut self, u: NodeIndex, from: usize, v: NodeIndex, to: usize) {
-        self.0.add_edge(u, v, Edge {
+        self.g.add_edge(u, v, Edge {
             from: Port(from),
             to: Port(to)
         });
@@ -307,15 +357,15 @@ impl Graph {
     pub fn type_check(&mut self) -> Result<()> {
         let mut subs = SubstitutionMap::default();
 
-        for e in self.0.edge_references() {
+        for e in self.g.edge_references() {
             let u = e.source();
             let v = e.target();
             let edge = e.weight();
 
-            let (_, u_out) = self.0[u].ty.break_arrow().context("failed to break `u` instance as Arrow")?;
+            let (_, u_out) = self.g[u].ty.break_arrow().context("failed to break `u` instance as Arrow")?;
             let u_tuple = u_out.break_tuple().context("failed to break `u` output as Tuple")?;
 
-            let (v_in, _) = self.0[v].ty.break_arrow().context("failed to break `v` instance as Arrow")?;
+            let (v_in, _) = self.g[v].ty.break_arrow().context("failed to break `v` instance as Arrow")?;
             let v_tuple = v_in.break_tuple().context("failed to break `v` output as Tuple")?;
 
             let t0 = &u_tuple.get(edge.from.0).context("`from` port out of bounds")?.substitute(&subs);
@@ -324,9 +374,9 @@ impl Graph {
             subs.compose_with(&Type::unify(t0, t1)?);
         }
 
-        let indices: Vec<_> = self.0.nodes_iter().collect();
+        let indices: Vec<_> = self.g.nodes_iter().collect();
         for i in indices {
-            if let Some(n) = self.0.node_weight_mut(i) {
+            if let Some(n) = self.g.node_weight_mut(i) {
                 n.ty = n.ty.substitute(&subs);
             }
         }
