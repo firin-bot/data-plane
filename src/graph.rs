@@ -1,3 +1,6 @@
+extern crate alloc;
+
+use alloc::rc::Rc;
 use anyhow::Context as _;
 use anyhow::ensure;
 use anyhow::Result;
@@ -7,6 +10,7 @@ use derive_more::IntoIterator;
 use petgraph::acyclic::Acyclic;
 use petgraph::data::Build as _;
 use petgraph::data::DataMapMut as _;
+use petgraph::Direction;
 use petgraph::stable_graph::NodeIndex;
 use petgraph::stable_graph::StableDiGraph;
 use petgraph::visit::EdgeRef as _;
@@ -110,6 +114,10 @@ impl Type {
         Self::App(TypeCon::Real, vec![])
     }
 
+    pub fn io(inner_ty: Self) -> Self {
+        Self::App(TypeCon::IO, vec![inner_ty])
+    }
+
     pub fn list(elem_ty: Self) -> Self {
         Self::App(TypeCon::List, vec![elem_ty])
     }
@@ -161,8 +169,6 @@ impl Type {
             Ok(core::iter::once((a, t.clone())).collect())
         }
 
-        log::info!("{t0:?}, {t1:?}");
-
         match (t0, t1) {
             (Self::Var(a), Self::Var(b)) if a == b => Ok(SubstitutionMap::default()),
             (Self::Var(a), t) => bind(*a, t),
@@ -197,6 +203,28 @@ impl Scheme {
     }
 }
 
+#[derive(Clone)]
+pub struct Effect {
+    ret_ty: Type,
+    thunk: Rc<dyn Fn() -> Result<Value>>
+}
+
+impl Effect {
+    pub fn ret_ty(&self) -> &Type {
+        &self.ret_ty
+    }
+
+    pub fn run(&self) -> Result<Value> {
+        (self.thunk)()
+    }
+}
+
+impl core::fmt::Debug for Effect {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.write_str("<effect>")
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum Value {
     Boolean(bool),
@@ -207,10 +235,19 @@ pub enum Value {
     List {
         elem_ty: Type,
         elems: Vec<Value>
-    }
+    },
+    Effect(Effect)
 }
 
 impl Value {
+    pub const fn unit() -> Self {
+        Self::Tuple(vec![])
+    }
+
+    pub fn singleton(elem_ty: Self) -> Self {
+        Self::Tuple(vec![elem_ty])
+    }
+
     pub fn ty(&self) -> Type {
         match self {
             Self::Boolean(_)           => Type::boolean(),
@@ -218,7 +255,8 @@ impl Value {
             Self::Integer(_)           => Type::integer(),
             Self::Real(_)              => Type::real(),
             Self::Tuple(vals)          => Type::tuple(vals.iter().map(Self::ty).collect()),
-            Self::List { elem_ty, .. } => Type::list(elem_ty.clone())
+            Self::List { elem_ty, .. } => Type::list(elem_ty.clone()),
+            Self::Effect(effect)       => Type::io(effect.ret_ty.clone())
         }
     }
 }
@@ -228,6 +266,7 @@ pub enum Op {
     Return,
     Constant(Value),
     Identity,
+    Pure,
     Add
 }
 
@@ -260,6 +299,16 @@ impl Op {
                     ty: Type::arrow(
                         Type::singleton(Type::Var(a)),
                         Type::singleton(Type::Var(a))
+                    )
+                }
+            },
+            Self::Pure => {
+                let a = TypeVar(0);
+                Scheme {
+                    vars: vec![a],
+                    ty: Type::arrow(
+                        Type::singleton(Type::Var(a)),
+                        Type::singleton(Type::io(Type::Var(a)))
                     )
                 }
             },
@@ -306,7 +355,7 @@ impl Context {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Port(pub usize);
 
 #[derive(Debug)]
@@ -382,5 +431,31 @@ impl Graph {
         }
 
         Ok(())
+    }
+
+    pub fn evaluate_node(&self, index: NodeIndex) -> Value {
+        let mut inputs: HashMap<Port, NodeIndex> = HashMap::default();
+        for edge in self.g.edges_directed(index, Direction::Incoming) {
+            inputs.insert(edge.weight().to, edge.source());
+        }
+
+        log::info!("{:?}", self.g[index].op);
+        match &self.g[index].op {
+            Op::Return        => self.evaluate_node(inputs[&Port(0)]),
+            Op::Constant(val) => val.clone(),
+            Op::Identity      => self.evaluate_node(inputs[&Port(0)]),
+            Op::Pure          => {
+                let v = self.evaluate_node(inputs[&Port(0)]);
+                Value::Effect(Effect {
+                    ret_ty: v.ty(),
+                    thunk: Rc::new(move || Ok(v.clone()))
+                })
+            },
+            Op::Add           => todo!()
+        }
+    }
+
+    pub fn evaluate(&self) -> Value {
+        self.evaluate_node(self.ret())
     }
 }

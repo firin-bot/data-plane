@@ -42,20 +42,28 @@ async fn main() -> Result<()> {
 
     let mut g = graph::Graph::new();
 
-    let constant1 = g.add(graph::Op::Constant(graph::Value::Integer(42)))?;
-    //let constant2 = g.add(graph::Op::Constant(graph::Value::Integer(69)))?;
-    let input_id  = g.add(graph::Op::Identity)?;
-    let add       = g.add(graph::Op::Add)?;
-    let id        = g.add(graph::Op::Identity)?;
+    let constant = g.add(graph::Op::Constant(graph::Value::Integer(42)))?;
+    let identity = g.add(graph::Op::Identity)?;
+    let pure     = g.add(graph::Op::Pure)?;
 
-    g.connect(constant1, 0, add,     0);
-    g.connect(input_id,  0, add,     1);
-    g.connect(add,       0, id,      0);
-    g.connect(id,        0, g.ret(), 0);
+    //g.connect(constant1, 0, add,     0);
+    //g.connect(input_id,  0, add,     1);
+    //g.connect(add,       0, id,      0);
+    //g.connect(id,        0, g.ret(), 0);
 
-    log::info!("{:?}", Dot::new(g.inner()));
+    g.connect(constant, 0, identity, 0);
+    g.connect(identity, 0, pure,     0);
+    g.connect(pure,     0, g.ret(),  0);
+
     g.type_check()?;
     log::info!("{:?}", Dot::new(g.inner()));
+
+    let val = g.evaluate();
+    log::info!("val = {:?}", val);
+
+    if let graph::Value::Effect(effect) = val {
+        log::info!("result = {:?}", effect.run()?);
+    }
 
     return Ok(());
 
