@@ -210,7 +210,7 @@ pub struct Effect {
 }
 
 impl Effect {
-    pub fn ret_ty(&self) -> &Type {
+    pub const fn ret_ty(&self) -> &Type {
         &self.ret_ty
     }
 
@@ -433,29 +433,28 @@ impl Graph {
         Ok(())
     }
 
-    pub fn evaluate_node(&self, index: NodeIndex) -> Value {
+    pub fn evaluate_node(&self, index: NodeIndex) -> Result<Value> {
         let mut inputs: HashMap<Port, NodeIndex> = HashMap::default();
         for edge in self.g.edges_directed(index, Direction::Incoming) {
             inputs.insert(edge.weight().to, edge.source());
         }
 
-        log::info!("{:?}", self.g[index].op);
         match &self.g[index].op {
-            Op::Return        => self.evaluate_node(inputs[&Port(0)]),
-            Op::Constant(val) => val.clone(),
-            Op::Identity      => self.evaluate_node(inputs[&Port(0)]),
+            Op::Return        => self.evaluate_node(*inputs.get(&Port(0)).context("port 0 unconnected")?),
+            Op::Constant(val) => Ok(val.clone()),
+            Op::Identity      => self.evaluate_node(*inputs.get(&Port(0)).context("port 0 unconnected")?),
             Op::Pure          => {
-                let v = self.evaluate_node(inputs[&Port(0)]);
-                Value::Effect(Effect {
+                let v = self.evaluate_node(*inputs.get(&Port(0)).context("port 0 unconnected")?)?;
+                Ok(Value::Effect(Effect {
                     ret_ty: v.ty(),
                     thunk: Rc::new(move || Ok(v.clone()))
-                })
+                }))
             },
             Op::Add           => todo!()
         }
     }
 
-    pub fn evaluate(&self) -> Value {
+    pub fn evaluate(&self) -> Result<Value> {
         self.evaluate_node(self.ret())
     }
 }

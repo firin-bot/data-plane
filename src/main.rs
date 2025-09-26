@@ -58,7 +58,7 @@ async fn main() -> Result<()> {
     g.type_check()?;
     log::info!("{:?}", Dot::new(g.inner()));
 
-    let val = g.evaluate();
+    let val = g.evaluate()?;
     log::info!("val = {:?}", val);
 
     if let graph::Value::Effect(effect) = val {
