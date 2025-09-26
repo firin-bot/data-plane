@@ -45,15 +45,13 @@ async fn main() -> Result<()> {
     let constant = g.add(graph::Op::Constant(graph::Value::Integer(42)))?;
     let identity = g.add(graph::Op::Identity)?;
     let pure     = g.add(graph::Op::Pure)?;
-
-    //g.connect(constant1, 0, add,     0);
-    //g.connect(input_id,  0, add,     1);
-    //g.connect(add,       0, id,      0);
-    //g.connect(id,        0, g.ret(), 0);
+    let bind     = g.add(graph::Op::Bind)?;
 
     g.connect(constant, 0, identity, 0);
     g.connect(identity, 0, pure,     0);
     g.connect(pure,     0, g.ret(),  0);
+    //g.connect(pure,     0, bind,  0);
+    //g.connect(pure_fn,  0, pure_fn
 
     g.type_check()?;
     log::info!("{:?}", Dot::new(g.inner()));

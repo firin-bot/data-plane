@@ -38,7 +38,7 @@ pub enum TypeCon {
     Real,
 
     // arity = 1
-    IO,
+    Effect,
     List,
 
     // arity = 2
@@ -56,7 +56,7 @@ impl TypeCon {
             Self::Integer   => Kind::Type,
             Self::Real      => Kind::Type,
 
-            Self::IO        => Kind::arrow(Kind::Type, Kind::Type),
+            Self::Effect    => Kind::arrow(Kind::Type, Kind::Type),
             Self::List      => Kind::arrow(Kind::Type, Kind::Type),
 
             Self::Arrow     => Kind::arrow(Kind::Type, Kind::arrow(Kind::Type, Kind::Type)),
@@ -114,8 +114,8 @@ impl Type {
         Self::App(TypeCon::Real, vec![])
     }
 
-    pub fn io(inner_ty: Self) -> Self {
-        Self::App(TypeCon::IO, vec![inner_ty])
+    pub fn effect(inner_ty: Self) -> Self {
+        Self::App(TypeCon::Effect, vec![inner_ty])
     }
 
     pub fn list(elem_ty: Self) -> Self {
@@ -256,7 +256,7 @@ impl Value {
             Self::Real(_)              => Type::real(),
             Self::Tuple(vals)          => Type::tuple(vals.iter().map(Self::ty).collect()),
             Self::List { elem_ty, .. } => Type::list(elem_ty.clone()),
-            Self::Effect(effect)       => Type::io(effect.ret_ty.clone())
+            Self::Effect(effect)       => Type::effect(effect.ret_ty.clone())
         }
     }
 }
@@ -267,6 +267,7 @@ pub enum Op {
     Constant(Value),
     Identity,
     Pure,
+    Bind,
     Add
 }
 
@@ -308,7 +309,24 @@ impl Op {
                     vars: vec![a],
                     ty: Type::arrow(
                         Type::singleton(Type::Var(a)),
-                        Type::singleton(Type::io(Type::Var(a)))
+                        Type::singleton(Type::effect(Type::Var(a)))
+                    )
+                }
+            },
+            Self::Bind => {
+                let a = TypeVar(0);
+                let b = TypeVar(1);
+                Scheme {
+                    vars: vec![a, b],
+                    ty: Type::arrow(
+                        Type::tuple(vec![
+                            Type::effect(Type::Var(a)),
+                            Type::arrow(
+                                Type::Var(a),
+                                Type::effect(Type::Var(b))
+                            )
+                        ]),
+                        Type::singleton(Type::effect(Type::Var(b)))
                     )
                 }
             },
@@ -450,6 +468,7 @@ impl Graph {
                     thunk: Rc::new(move || Ok(v.clone()))
                 }))
             },
+            Op::Bind          => todo!(),
             Op::Add           => todo!()
         }
     }
