@@ -2,7 +2,6 @@ extern crate alloc;
 
 use alloc::rc::Rc;
 use anyhow::Context as _;
-use anyhow::ensure;
 use anyhow::Result;
 use derive_more::Deref;
 use derive_more::DerefMut;
@@ -263,7 +262,6 @@ impl Value {
 
 #[derive(Clone, Debug)]
 pub enum Op {
-    Return,
     Constant(Value),
     Identity,
     Pure,
@@ -274,16 +272,6 @@ pub enum Op {
 impl Op {
     pub fn scheme(&self) -> Scheme {
         match self {
-            Self::Return => {
-                let a = TypeVar(0);
-                Scheme {
-                    vars: vec![a],
-                    ty: Type::arrow(
-                        Type::singleton(Type::Var(a)),
-                        Type::unit()
-                    )
-                }
-            },
             Self::Constant(v) => {
                 Scheme {
                     vars: vec![],
@@ -348,15 +336,28 @@ impl Op {
 
     pub fn instantiate(&self, ctx: &mut Context) -> Instance {
         Instance {
-            op: self.clone(),
+            data: self.clone().into(),
             ty: self.scheme().instantiate(ctx)
         }
     }
 }
 
 #[derive(Debug)]
+pub enum InstanceData {
+    Op(Op),
+    Input,
+    Output
+}
+
+impl From<Op> for InstanceData {
+    fn from(op: Op) -> Self {
+        Self::Op(op)
+    }
+}
+
+#[derive(Debug)]
 pub struct Instance {
-    pub op: Op,
+    pub data: InstanceData,
     pub ty: Type
 }
 
@@ -366,6 +367,12 @@ pub struct Context {
 }
 
 impl Context {
+    pub fn with_initial(initial: u32) -> Self {
+        Self {
+            next: initial
+        }
+    }
+
     pub const fn fresh_var(&mut self) -> TypeVar {
         let v = self.next;
         self.next += 1;
@@ -375,6 +382,12 @@ impl Context {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Port(pub usize);
+
+impl From<usize> for Port {
+    fn from(u: usize) -> Self {
+        Self(u)
+    }
+}
 
 #[derive(Debug)]
 pub struct Edge {
@@ -386,38 +399,68 @@ pub struct Edge {
 pub struct Graph {
     ctx: Context,
     g: Acyclic<StableDiGraph<Instance, Edge>>,
-    ret: NodeIndex
+    scheme: Scheme,
+    inputs: Vec<NodeIndex>,
+    outputs: Vec<NodeIndex>
 }
 
 impl Graph {
-    pub fn new() -> Self {
-        let mut ctx = Context::default();
+    pub fn new(scheme: Scheme) -> Result<Self> {
+        let mut ctx = Context::with_initial(scheme.vars.len() as u32);
         let mut g: Acyclic<StableDiGraph<Instance, Edge>> = Default::default();
-        let ret = g.add_node(Op::Return.instantiate(&mut ctx));
-        Self {
+
+        let (in_ty, out_ty) = scheme.ty.break_arrow().context("failed to break graph scheme as Arrow")?;
+        let in_tuple = in_ty.break_tuple().context("failed to break graph input as Tuple")?;
+        let out_tuple = out_ty.break_tuple().context("failed to break graph output as Tuple")?;
+
+        let inputs: Vec<_> = in_tuple.into_iter().map(|ty| {
+            g.add_node(Instance {
+                data: InstanceData::Input,
+                ty: Type::arrow(
+                    Type::unit(),
+                    Type::singleton(ty.clone())
+                )
+            })
+        }).collect();
+        let outputs: Vec<_> = out_tuple.into_iter().map(|ty| {
+            g.add_node(Instance {
+                data: InstanceData::Output,
+                ty: Type::arrow(
+                    Type::singleton(ty.clone()),
+                    Type::unit()
+                )
+            })
+        }).collect();
+
+        Ok(Self {
             ctx,
             g,
-            ret
-        }
+            scheme,
+            inputs,
+            outputs
+        })
     }
 
     pub const fn inner(&self) -> &Acyclic<StableDiGraph<Instance, Edge>> {
         &self.g
     }
 
-    pub const fn ret(&self) -> NodeIndex {
-        self.ret
+    pub fn get_output_unchecked(&self, Port(i): Port) -> NodeIndex {
+        self.outputs[i]
     }
 
-    pub fn add(&mut self, op: Op) -> Result<NodeIndex> {
-        ensure!(!matches!(op, Op::Return), "cannot add more than one Return instance");
-        Ok(self.g.add_node(op.instantiate(&mut self.ctx)))
+    pub fn get_output(&self, Port(i): Port) -> Option<NodeIndex> {
+        self.outputs.get(i).copied()
     }
 
-    pub fn connect(&mut self, u: NodeIndex, from: usize, v: NodeIndex, to: usize) {
+    pub fn add(&mut self, op: Op) -> NodeIndex {
+        self.g.add_node(op.instantiate(&mut self.ctx))
+    }
+
+    pub fn connect(&mut self, u: NodeIndex, from: Port, v: NodeIndex, to: Port) {
         self.g.add_edge(u, v, Edge {
-            from: Port(from),
-            to: Port(to)
+            from,
+            to
         });
     }
 
@@ -457,23 +500,27 @@ impl Graph {
             inputs.insert(edge.weight().to, edge.source());
         }
 
-        match &self.g[index].op {
-            Op::Return        => self.evaluate_node(*inputs.get(&Port(0)).context("port 0 unconnected")?),
-            Op::Constant(val) => Ok(val.clone()),
-            Op::Identity      => self.evaluate_node(*inputs.get(&Port(0)).context("port 0 unconnected")?),
-            Op::Pure          => {
-                let v = self.evaluate_node(*inputs.get(&Port(0)).context("port 0 unconnected")?)?;
-                Ok(Value::Effect(Effect {
-                    ret_ty: v.ty(),
-                    thunk: Rc::new(move || Ok(v.clone()))
-                }))
+        match &self.g[index].data {
+            InstanceData::Op(op) => match op {
+                //Op::Return        => self.evaluate_node(*inputs.get(&0.into()).context("port 0 unconnected")?),
+                Op::Constant(val) => Ok(val.clone()),
+                Op::Identity      => self.evaluate_node(*inputs.get(&0.into()).context("port 0 unconnected")?),
+                Op::Pure          => {
+                    let v = self.evaluate_node(*inputs.get(&0.into()).context("port 0 unconnected")?)?;
+                    Ok(Value::Effect(Effect {
+                        ret_ty: v.ty(),
+                        thunk: Rc::new(move || Ok(v.clone()))
+                    }))
+                },
+                Op::Bind          => todo!(),
+                Op::Add           => todo!()
             },
-            Op::Bind          => todo!(),
-            Op::Add           => todo!()
+            InstanceData::Input => todo!(),
+            InstanceData::Output => self.evaluate_node(*inputs.get(&0.into()).context("port 0 unconnected")?)
         }
     }
 
-    pub fn evaluate(&self) -> Result<Value> {
-        self.evaluate_node(self.ret())
+    pub fn evaluate(&self, port: Port) -> Result<Value> {
+        self.evaluate_node(self.get_output(port).context("output port out of bounds")?)
     }
 }

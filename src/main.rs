@@ -40,28 +40,53 @@ async fn main() -> Result<()> {
 
     // graph stuff
 
-    let mut g = graph::Graph::new();
+    let mut g = graph::Graph::new(graph::Scheme {
+        vars: vec![],
+        ty: graph::Type::arrow(
+            graph::Type::unit(),
+            graph::Type::tuple(vec![
+                graph::Type::effect(graph::Type::integer()),
+                graph::Type::effect(graph::Type::Var(graph::TypeVar(0))),
+                graph::Type::character()
+            ])
+        )
+    })?;
 
-    let constant = g.add(graph::Op::Constant(graph::Value::Integer(42)))?;
-    let identity = g.add(graph::Op::Identity)?;
-    let pure     = g.add(graph::Op::Pure)?;
-    let bind     = g.add(graph::Op::Bind)?;
+    let constant = g.add(graph::Op::Constant(graph::Value::Integer(42)));
+    let chara    = g.add(graph::Op::Constant(graph::Value::Character('H')));
+    let identity = g.add(graph::Op::Identity);
+    let pure     = g.add(graph::Op::Pure);
+    let bind     = g.add(graph::Op::Bind);
 
-    g.connect(constant, 0, identity, 0);
-    g.connect(identity, 0, pure,     0);
-    g.connect(pure,     0, g.ret(),  0);
+    g.connect(constant, 0.into(), identity,                         0.into());
+    g.connect(identity, 0.into(), pure,                             0.into());
+    g.connect(pure,     0.into(), g.get_output_unchecked(0.into()), 0.into());
+    g.connect(pure,     0.into(), g.get_output_unchecked(1.into()), 0.into());
+    g.connect(chara,    0.into(), g.get_output_unchecked(2.into()), 0.into());
     //g.connect(pure,     0, bind,  0);
     //g.connect(pure_fn,  0, pure_fn
 
     g.type_check()?;
     log::info!("{:?}", Dot::new(g.inner()));
 
-    let val = g.evaluate()?;
+    let val = g.evaluate(0.into())?;
     log::info!("val = {:?}", val);
 
     if let graph::Value::Effect(effect) = val {
         log::info!("result = {:?}", effect.run()?);
     }
+
+
+    let val = g.evaluate(1.into())?;
+    log::info!("val = {:?}", val);
+
+    if let graph::Value::Effect(effect) = val {
+        log::info!("result = {:?}", effect.run()?);
+    }
+
+
+    let val = g.evaluate(2.into())?;
+    log::info!("val = {:?}", val);
 
     return Ok(());
 
