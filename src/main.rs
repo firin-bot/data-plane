@@ -40,6 +40,24 @@ async fn main() -> Result<()> {
 
     // graph stuff
 
+    let mut g_identity = graph::Graph::new({
+        let a = graph::TypeVar(0);
+        graph::Scheme {
+            vars: vec![a],
+            ty: graph::Type::arrow(
+                graph::Type::singleton(graph::Type::Var(a)),
+                graph::Type::singleton(graph::Type::Var(a))
+            )
+        }
+    })?;
+    g_identity.connect(
+        g_identity.get_input_unchecked(0.into()), 0.into(),
+        g_identity.get_output_unchecked(0.into()), 0.into()
+    );
+    g_identity.type_check()?;
+
+    log::info!("{:?}", Dot::new(g_identity.inner()));
+
     let mut g = graph::Graph::new(graph::Scheme {
         vars: vec![],
         ty: graph::Type::arrow(
@@ -54,7 +72,7 @@ async fn main() -> Result<()> {
 
     let constant = g.add(graph::Op::Constant(graph::Value::Integer(42)));
     let chara    = g.add(graph::Op::Constant(graph::Value::Character('H')));
-    let identity = g.add(graph::Op::Identity);
+    let identity = g.add(graph::Op::Graph(g_identity.into()));
     let pure     = g.add(graph::Op::Pure);
     let bind     = g.add(graph::Op::Bind);
 

@@ -186,7 +186,7 @@ impl Type {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Scheme {
     pub vars: Vec<TypeVar>,
     pub ty: Type
@@ -266,6 +266,7 @@ pub enum Op {
     Identity,
     Pure,
     Bind,
+    Graph(Rc<Graph>),
     Add
 }
 
@@ -318,6 +319,7 @@ impl Op {
                     )
                 }
             },
+            Self::Graph(g) => g.scheme.clone(),
             Self::Add => {
                 let a = TypeVar(0);
                 Scheme {
@@ -406,7 +408,7 @@ pub struct Graph {
 
 impl Graph {
     pub fn new(scheme: Scheme) -> Result<Self> {
-        let mut ctx = Context::with_initial(scheme.vars.len() as u32);
+        let ctx = Context::with_initial(scheme.vars.len() as u32);
         let mut g: Acyclic<StableDiGraph<Instance, Edge>> = Default::default();
 
         let (in_ty, out_ty) = scheme.ty.break_arrow().context("failed to break graph scheme as Arrow")?;
@@ -443,6 +445,14 @@ impl Graph {
 
     pub const fn inner(&self) -> &Acyclic<StableDiGraph<Instance, Edge>> {
         &self.g
+    }
+
+    pub fn get_input_unchecked(&self, Port(i): Port) -> NodeIndex {
+        self.inputs[i]
+    }
+
+    pub fn get_input(&self, Port(i): Port) -> Option<NodeIndex> {
+        self.inputs.get(i).copied()
     }
 
     pub fn get_output_unchecked(&self, Port(i): Port) -> NodeIndex {
@@ -494,6 +504,7 @@ impl Graph {
         Ok(())
     }
 
+    // XXX: take output port for target node and evaluate only that output
     pub fn evaluate_node(&self, index: NodeIndex) -> Result<Value> {
         let mut inputs: HashMap<Port, NodeIndex> = HashMap::default();
         for edge in self.g.edges_directed(index, Direction::Incoming) {
@@ -502,7 +513,6 @@ impl Graph {
 
         match &self.g[index].data {
             InstanceData::Op(op) => match op {
-                //Op::Return        => self.evaluate_node(*inputs.get(&0.into()).context("port 0 unconnected")?),
                 Op::Constant(val) => Ok(val.clone()),
                 Op::Identity      => self.evaluate_node(*inputs.get(&0.into()).context("port 0 unconnected")?),
                 Op::Pure          => {
@@ -513,9 +523,10 @@ impl Graph {
                     }))
                 },
                 Op::Bind          => todo!(),
+                Op::Graph(g)      => g.evaluate(0.into()),
                 Op::Add           => todo!()
             },
-            InstanceData::Input => todo!(),
+            InstanceData::Input => Ok(Value::Integer(69)), // XXX: hardcoded
             InstanceData::Output => self.evaluate_node(*inputs.get(&0.into()).context("port 0 unconnected")?)
         }
     }
