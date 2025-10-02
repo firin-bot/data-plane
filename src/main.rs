@@ -45,6 +45,7 @@ async fn main() -> Result<()> {
         graph::Scheme {
             vars: vec![a],
             ty: graph::Type::arrow(
+                //graph::Type::singleton(graph::Type::character()),
                 graph::Type::singleton(graph::Type::Var(a)),
                 graph::Type::singleton(graph::Type::Var(a))
             )
@@ -54,8 +55,8 @@ async fn main() -> Result<()> {
         g_identity.get_input_unchecked(0.into()), 0.into(),
         g_identity.get_output_unchecked(0.into()), 0.into()
     );
-    g_identity.type_check()?;
 
+    g_identity.type_check()?;
     log::info!("{:?}", Dot::new(g_identity.inner()));
 
     let mut g = graph::Graph::new(graph::Scheme {
@@ -87,24 +88,24 @@ async fn main() -> Result<()> {
     g.type_check()?;
     log::info!("{:?}", Dot::new(g.inner()));
 
-    let val = g.evaluate(0.into())?;
-    log::info!("val = {:?}", val);
+    let val = g.evaluate(&vec![], 0.into())?;
+    log::info!("val0 = {:?}", val);
 
     if let graph::Value::Effect(effect) = val {
-        log::info!("result = {:?}", effect.run()?);
+        log::info!("result0 = {:?}", effect.run()?);
     }
 
 
-    let val = g.evaluate(1.into())?;
-    log::info!("val = {:?}", val);
+    let val = g.evaluate(&vec![], 1.into())?;
+    log::info!("val1 = {:?}", val);
 
     if let graph::Value::Effect(effect) = val {
-        log::info!("result = {:?}", effect.run()?);
+        log::info!("result1 = {:?}", effect.run()?);
     }
 
 
-    let val = g.evaluate(2.into())?;
-    log::info!("val = {:?}", val);
+    let val = g.evaluate(&vec![], 2.into())?;
+    log::info!("val2 = {:?}", val);
 
     return Ok(());
 

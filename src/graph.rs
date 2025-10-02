@@ -14,6 +14,7 @@ use petgraph::stable_graph::NodeIndex;
 use petgraph::stable_graph::StableDiGraph;
 use petgraph::visit::EdgeRef as _;
 use petgraph::visit::IntoEdgeReferences as _;
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 
 #[derive(Debug)]
@@ -347,8 +348,8 @@ impl Op {
 #[derive(Debug)]
 pub enum InstanceData {
     Op(Op),
-    Input,
-    Output
+    Input(usize),
+    Output(usize)
 }
 
 impl From<Op> for InstanceData {
@@ -382,7 +383,7 @@ impl Context {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Port(pub usize);
 
 impl From<usize> for Port {
@@ -415,18 +416,18 @@ impl Graph {
         let in_tuple = in_ty.break_tuple().context("failed to break graph input as Tuple")?;
         let out_tuple = out_ty.break_tuple().context("failed to break graph output as Tuple")?;
 
-        let inputs: Vec<_> = in_tuple.into_iter().map(|ty| {
+        let inputs: Vec<_> = in_tuple.into_iter().enumerate().map(|(i, ty)| {
             g.add_node(Instance {
-                data: InstanceData::Input,
+                data: InstanceData::Input(i),
                 ty: Type::arrow(
                     Type::unit(),
                     Type::singleton(ty.clone())
                 )
             })
         }).collect();
-        let outputs: Vec<_> = out_tuple.into_iter().map(|ty| {
+        let outputs: Vec<_> = out_tuple.into_iter().enumerate().map(|(i, ty)| {
             g.add_node(Instance {
-                data: InstanceData::Output,
+                data: InstanceData::Output(i),
                 ty: Type::arrow(
                     Type::singleton(ty.clone()),
                     Type::unit()
@@ -505,8 +506,8 @@ impl Graph {
     }
 
     // XXX: take output port for target node and evaluate only that output
-    pub fn evaluate_node(&self, index: NodeIndex) -> Result<Value> {
-        let mut inputs: HashMap<Port, NodeIndex> = HashMap::default();
+    pub fn evaluate_node(&self, graph_inputs: &[Value], index: NodeIndex) -> Result<Value> {
+        let mut inputs: BTreeMap<Port, NodeIndex> = Default::default();
         for edge in self.g.edges_directed(index, Direction::Incoming) {
             inputs.insert(edge.weight().to, edge.source());
         }
@@ -514,24 +515,30 @@ impl Graph {
         match &self.g[index].data {
             InstanceData::Op(op) => match op {
                 Op::Constant(val) => Ok(val.clone()),
-                Op::Identity      => self.evaluate_node(*inputs.get(&0.into()).context("port 0 unconnected")?),
+                Op::Identity      => self.evaluate_node(graph_inputs, *inputs.get(&0.into()).context("port 0 unconnected")?),
                 Op::Pure          => {
-                    let v = self.evaluate_node(*inputs.get(&0.into()).context("port 0 unconnected")?)?;
+                    let v = self.evaluate_node(graph_inputs, *inputs.get(&0.into()).context("port 0 unconnected")?)?;
                     Ok(Value::Effect(Effect {
                         ret_ty: v.ty(),
                         thunk: Rc::new(move || Ok(v.clone()))
                     }))
                 },
                 Op::Bind          => todo!(),
-                Op::Graph(g)      => g.evaluate(0.into()),
+                Op::Graph(g)      => {
+                    let subgraph_inputs: Vec<_> = inputs.into_values().map(|index| {
+                        self.evaluate_node(graph_inputs, index)
+                    }).collect::<Result<_>>()?;
+
+                    g.evaluate(&subgraph_inputs, 0.into())
+                }
                 Op::Add           => todo!()
             },
-            InstanceData::Input => Ok(Value::Integer(69)), // XXX: hardcoded
-            InstanceData::Output => self.evaluate_node(*inputs.get(&0.into()).context("port 0 unconnected")?)
+            InstanceData::Input(i) => graph_inputs.get(*i).context("graph input missing").cloned(),
+            InstanceData::Output(i) => self.evaluate_node(graph_inputs, *inputs.get(&0.into()).context("port 0 unconnected")?)
         }
     }
 
-    pub fn evaluate(&self, port: Port) -> Result<Value> {
-        self.evaluate_node(self.get_output(port).context("output port out of bounds")?)
+    pub fn evaluate(&self, graph_inputs: &[Value], port: Port) -> Result<Value> {
+        self.evaluate_node(graph_inputs, self.get_output(port).context("output port out of bounds")?)
     }
 }
