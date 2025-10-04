@@ -1,5 +1,6 @@
 extern crate alloc;
 
+use alloc::collections::BTreeMap;
 use alloc::rc::Rc;
 use anyhow::anyhow;
 use anyhow::Context as _;
@@ -15,7 +16,6 @@ use petgraph::stable_graph::NodeIndex;
 use petgraph::stable_graph::StableDiGraph;
 use petgraph::visit::EdgeRef as _;
 use petgraph::visit::IntoEdgeReferences as _;
-use std::collections::BTreeMap;
 use std::collections::HashMap;
 
 #[derive(Debug)]
@@ -267,10 +267,9 @@ impl Value {
 #[derive(Clone, Debug)]
 pub enum Op {
     Constant(Value),
-    Identity,
     Pure,
     Bind,
-    Graph(Graph),
+    Graph(Box<Graph>),
     Add
 }
 
@@ -283,16 +282,6 @@ impl Op {
                     ty: Type::arrow(
                         Type::unit(),
                         Type::singleton(v.ty())
-                    )
-                }
-            },
-            Self::Identity => {
-                let a = TypeVar(0);
-                Scheme {
-                    vars: vec![a],
-                    ty: Type::arrow(
-                        Type::singleton(Type::Var(a)),
-                        Type::singleton(Type::Var(a))
                     )
                 }
             },
@@ -402,7 +391,6 @@ impl Instance {
         let x = match &self.data {
             InstanceData::Op(op) => match op {
                 Op::Constant(val) => Ok(val.clone()),
-                Op::Identity      => inputs.get(&0).context("port 0 unconnected").cloned(),
                 Op::Pure          => {
                     let v = inputs.get(&0).context("port 0 unconnected")?.clone();
                     Ok(Value::Effect(Effect {
@@ -440,10 +428,18 @@ impl Instance {
                     let subgraph_inputs: Vec<_> = inputs.into_values().collect();
                     g.evaluate(&subgraph_inputs, 0)
                 }
-                Op::Add           => todo!()
+                Op::Add           => {
+                    let v0 = inputs.get(&0).context("port 0 unconnected")?.clone();
+                    let v1 = inputs.get(&1).context("port 1 unconnected")?.clone();
+                    if let Value::Integer(i0) = v0 && let Value::Integer(i1) = v1 {
+                        Ok(Value::Integer(i0 + i1))
+                    } else {
+                        Err(anyhow!("invalid type for Add instance"))
+                    }
+                }
             },
             InstanceData::Input(i) => graph_inputs.get(*i).context("graph input missing").cloned(),
-            InstanceData::Output(i) => inputs.get(&0).context("port 0 unconnected").cloned()
+            InstanceData::Output(_) => inputs.get(&0).context("port 0 unconnected").cloned()
         }?;
         Ok(x)
     }
@@ -455,7 +451,7 @@ pub struct Context {
 }
 
 impl Context {
-    pub fn with_initial(initial: u32) -> Self {
+    pub const fn with_initial(initial: u32) -> Self {
         Self {
             next: initial
         }
@@ -492,7 +488,7 @@ impl Graph {
         let in_tuple = in_ty.break_tuple().context("failed to break graph input as Tuple")?;
         let out_tuple = out_ty.break_tuple().context("failed to break graph output as Tuple")?;
 
-        let inputs: Vec<_> = in_tuple.into_iter().enumerate().map(|(i, ty)| {
+        let inputs: Vec<_> = in_tuple.iter().enumerate().map(|(i, ty)| {
             g.add_node(Instance {
                 data: InstanceData::Input(i),
                 ty: Type::arrow(
@@ -501,7 +497,7 @@ impl Graph {
                 )
             })
         }).collect();
-        let outputs: Vec<_> = out_tuple.into_iter().enumerate().map(|(i, ty)| {
+        let outputs: Vec<_> = out_tuple.iter().enumerate().map(|(i, ty)| {
             g.add_node(Instance {
                 data: InstanceData::Output(i),
                 ty: Type::arrow(
@@ -524,20 +520,12 @@ impl Graph {
         &self.g
     }
 
-    pub fn get_input_unchecked(&self, index: usize) -> NodeIndex {
-        self.inputs[index]
+    pub fn get_input(&self, index: usize) -> Result<NodeIndex> {
+        self.inputs.get(index).copied().with_context(|| format!("input index {} not found", index))
     }
 
-    pub fn get_input(&self, index: usize) -> Option<NodeIndex> {
-        self.inputs.get(index).copied()
-    }
-
-    pub fn get_output_unchecked(&self, index: usize) -> NodeIndex {
-        self.outputs[index]
-    }
-
-    pub fn get_output(&self, index: usize) -> Option<NodeIndex> {
-        self.outputs.get(index).copied()
+    pub fn get_output(&self, index: usize) -> Result<NodeIndex> {
+        self.outputs.get(index).copied().with_context(|| format!("output index {} not found", index))
     }
 
     pub fn add(&mut self, op: Op) -> NodeIndex {

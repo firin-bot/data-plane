@@ -15,8 +15,6 @@ use twitch_api::TwitchClient;
 use twitch_api::twitch_oauth2::AppAccessToken;
 use twitch_api::types::UserId;
 
-use petgraph::dot::Dot;
-
 struct DataState<'a> {
     client: TwitchClient<'a, reqwest::Client>,
     control_host: String,
@@ -45,19 +43,14 @@ async fn main() -> Result<()> {
         graph::Scheme {
             vars: vec![a],
             ty: graph::Type::arrow(
-                //graph::Type::singleton(graph::Type::character()),
                 graph::Type::singleton(graph::Type::Var(a)),
                 graph::Type::singleton(graph::Type::Var(a))
             )
         }
     })?;
-    g_identity.connect(
-        g_identity.get_input_unchecked(0), 0,
-        g_identity.get_output_unchecked(0), 0
-    );
+    g_identity.connect(g_identity.get_input(0)?, 0, g_identity.get_output(0)?, 0);
 
     g_identity.type_check()?;
-    log::info!("{:?}", Dot::new(g_identity.inner()));
 
     let mut g = graph::Graph::new({
         let a = graph::TypeVar(0);
@@ -75,26 +68,27 @@ async fn main() -> Result<()> {
     })?;
 
     let constant = g.add(graph::Op::Constant(graph::Value::Integer(42)));
-    let chara    = g.add(graph::Op::Constant(graph::Value::Character('H')));
-    let identity = g.add(graph::Op::Graph(g_identity.clone()));
+    let add      = g.add(graph::Op::Add);
+    let identity = g.add(graph::Op::Graph(Box::new(g_identity.clone())));
     let pure     = g.add(graph::Op::Pure);
     let lambda   = g.add(graph::Op::Pure);
     let bind     = g.add(graph::Op::Bind);
 
-    g.connect(constant, 0,   identity,                  0);
-    g.connect(identity, 0,   pure,                      0);
-    g.connect(pure,     0,   g.get_output_unchecked(0), 0);
-    g.connect(pure,     0,   bind,                      0);
-    g.connect_lambda(lambda, bind,                      1);
-    g.connect(bind,     0,   g.get_output_unchecked(1), 0);
+    g.connect(constant, 0,   add,              0);
+    g.connect(constant, 0,   add,              1);
 
-    log::info!("{:?}", Dot::new(g.inner()));
+    g.connect(add,      0,   identity,         0);
+    g.connect(identity, 0,   pure,             0);
+    g.connect(pure,     0,   g.get_output(0)?, 0);
+    g.connect(pure,     0,   bind,             0);
+    g.connect_lambda(lambda, bind,             1);
+    g.connect(bind,     0,   g.get_output(1)?, 0);
+
     g.type_check()?;
-    log::info!("{:?}", Dot::new(g.inner()));
 
 
 
-    let val = g.evaluate(&vec![], 0)?;
+    let val = g.evaluate(&[], 0)?;
     log::info!("val0 = {:?}", val);
 
     if let graph::Value::Effect(effect) = val {
@@ -102,7 +96,7 @@ async fn main() -> Result<()> {
     }
 
 
-    let val = g.evaluate(&vec![], 1)?;
+    let val = g.evaluate(&[], 1)?;
     log::info!("val1 = {:?}", val);
 
     if let graph::Value::Effect(effect) = val {
