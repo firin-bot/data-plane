@@ -69,7 +69,6 @@ async fn main() -> Result<()> {
                 graph::Type::tuple(vec![
                     graph::Type::effect(graph::Type::integer()),
                     graph::Type::effect(graph::Type::Var(a)),
-                    graph::Type::Var(b)
                 ])
             )
         }
@@ -78,23 +77,22 @@ async fn main() -> Result<()> {
     let constant = g.add(graph::Op::Constant(graph::Value::Integer(42)));
     let chara    = g.add(graph::Op::Constant(graph::Value::Character('H')));
     let identity = g.add(graph::Op::Graph(g_identity.clone()));
-    let identity2 = g.add(graph::Op::Graph(g_identity.clone()));
-    let identity3 = g.add(graph::Op::Graph(g_identity));
     let pure     = g.add(graph::Op::Pure);
+    let lambda   = g.add(graph::Op::Pure);
     let bind     = g.add(graph::Op::Bind);
 
-    g.connect(constant, 0, identity,                  0);
-    g.connect(identity, 0, pure,                      0);
-    g.connect(pure,     0, g.get_output_unchecked(0), 0);
-    g.connect(pure,     0, g.get_output_unchecked(1), 0);
-    //g.connect(pure,     0, bind,  0);
-    //g.connect(pure_fn,  0, pure_fn
+    g.connect(constant, 0,   identity,                  0);
+    g.connect(identity, 0,   pure,                      0);
+    g.connect(pure,     0,   g.get_output_unchecked(0), 0);
+    g.connect(pure,     0,   bind,                      0);
+    g.connect_lambda(lambda, bind,                      1);
+    g.connect(bind,     0,   g.get_output_unchecked(1), 0);
 
-    g.connect_from_lambda(identity2, identity3, 0);
-    g.connect(identity3,    0, g.get_output_unchecked(2), 0);
-
+    log::info!("{:?}", Dot::new(g.inner()));
     g.type_check()?;
     log::info!("{:?}", Dot::new(g.inner()));
+
+
 
     let val = g.evaluate(&vec![], 0)?;
     log::info!("val0 = {:?}", val);
@@ -110,12 +108,6 @@ async fn main() -> Result<()> {
     if let graph::Value::Effect(effect) = val {
         log::info!("result1 = {:?}", effect.run()?);
     }
-
-
-    log::info!("");
-    log::info!("");
-    let val = g.evaluate(&vec![], 2)?;
-    log::info!("val2 = {:?}", val);
 
     return Ok(());
 
