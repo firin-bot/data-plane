@@ -52,43 +52,51 @@ async fn main() -> Result<()> {
         }
     })?;
     g_identity.connect(
-        g_identity.get_input_unchecked(0.into()), 0.into(),
-        g_identity.get_output_unchecked(0.into()), 0.into()
+        g_identity.get_input_unchecked(0), 0,
+        g_identity.get_output_unchecked(0), 0
     );
 
     g_identity.type_check()?;
     log::info!("{:?}", Dot::new(g_identity.inner()));
 
-    let mut g = graph::Graph::new(graph::Scheme {
-        vars: vec![],
-        ty: graph::Type::arrow(
-            graph::Type::unit(),
-            graph::Type::tuple(vec![
-                graph::Type::effect(graph::Type::integer()),
-                graph::Type::effect(graph::Type::Var(graph::TypeVar(0))),
-                graph::Type::character()
-            ])
-        )
+    let mut g = graph::Graph::new({
+        let a = graph::TypeVar(0);
+        let b = graph::TypeVar(1);
+        graph::Scheme {
+            vars: vec![a, b],
+            ty: graph::Type::arrow(
+                graph::Type::unit(),
+                graph::Type::tuple(vec![
+                    graph::Type::effect(graph::Type::integer()),
+                    graph::Type::effect(graph::Type::Var(a)),
+                    graph::Type::Var(b)
+                ])
+            )
+        }
     })?;
 
     let constant = g.add(graph::Op::Constant(graph::Value::Integer(42)));
     let chara    = g.add(graph::Op::Constant(graph::Value::Character('H')));
-    let identity = g.add(graph::Op::Graph(g_identity.into()));
+    let identity = g.add(graph::Op::Graph(g_identity.clone()));
+    let identity2 = g.add(graph::Op::Graph(g_identity.clone()));
+    let identity3 = g.add(graph::Op::Graph(g_identity));
     let pure     = g.add(graph::Op::Pure);
     let bind     = g.add(graph::Op::Bind);
 
-    g.connect(constant, 0.into(), identity,                         0.into());
-    g.connect(identity, 0.into(), pure,                             0.into());
-    g.connect(pure,     0.into(), g.get_output_unchecked(0.into()), 0.into());
-    g.connect(pure,     0.into(), g.get_output_unchecked(1.into()), 0.into());
-    g.connect(chara,    0.into(), g.get_output_unchecked(2.into()), 0.into());
+    g.connect(constant, 0, identity,                  0);
+    g.connect(identity, 0, pure,                      0);
+    g.connect(pure,     0, g.get_output_unchecked(0), 0);
+    g.connect(pure,     0, g.get_output_unchecked(1), 0);
     //g.connect(pure,     0, bind,  0);
     //g.connect(pure_fn,  0, pure_fn
+
+    g.connect_from_lambda(identity2, identity3, 0);
+    g.connect(identity3,    0, g.get_output_unchecked(2), 0);
 
     g.type_check()?;
     log::info!("{:?}", Dot::new(g.inner()));
 
-    let val = g.evaluate(&vec![], 0.into())?;
+    let val = g.evaluate(&vec![], 0)?;
     log::info!("val0 = {:?}", val);
 
     if let graph::Value::Effect(effect) = val {
@@ -96,7 +104,7 @@ async fn main() -> Result<()> {
     }
 
 
-    let val = g.evaluate(&vec![], 1.into())?;
+    let val = g.evaluate(&vec![], 1)?;
     log::info!("val1 = {:?}", val);
 
     if let graph::Value::Effect(effect) = val {
@@ -104,7 +112,9 @@ async fn main() -> Result<()> {
     }
 
 
-    let val = g.evaluate(&vec![], 2.into())?;
+    log::info!("");
+    log::info!("");
+    let val = g.evaluate(&vec![], 2)?;
     log::info!("val2 = {:?}", val);
 
     return Ok(());
