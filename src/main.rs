@@ -86,7 +86,7 @@ async fn main() -> Result<()> {
 
 
 
-    let val = g.evaluate(&[], 0)?;
+    let val = g.evaluate(&graff::Inputs::default(), 0)?;
     log::info!("val0 = {:?}", val);
 
     if let graff::Value::Effect(effect) = val {
@@ -94,7 +94,7 @@ async fn main() -> Result<()> {
     }
 
 
-    let val = g.evaluate(&[], 1)?;
+    let val = g.evaluate(&graff::Inputs::default(), 1)?;
     log::info!("val1 = {:?}", val);
 
     if let graff::Value::Effect(effect) = val {
