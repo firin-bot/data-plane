@@ -1,5 +1,3 @@
-mod graph;
-
 use anyhow::Context as _;
 use anyhow::Result;
 use futures_util::StreamExt as _;
@@ -38,13 +36,13 @@ async fn main() -> Result<()> {
 
     // graph stuff
 
-    let mut g_identity = graph::Graph::new({
-        let a = graph::TypeVar(0);
-        graph::Scheme {
+    let mut g_identity = graff::Graph::new({
+        let a = graff::TypeVar(0);
+        graff::Scheme {
             vars: vec![a],
-            ty: graph::Type::arrow(
-                graph::Type::singleton(graph::Type::Var(a)),
-                graph::Type::singleton(graph::Type::Var(a))
+            ty: graff::Type::arrow(
+                graff::Type::singleton(graff::Type::Var(a)),
+                graff::Type::singleton(graff::Type::Var(a))
             )
         }
     })?;
@@ -52,27 +50,27 @@ async fn main() -> Result<()> {
 
     g_identity.type_check()?;
 
-    let mut g = graph::Graph::new({
-        let a = graph::TypeVar(0);
-        let b = graph::TypeVar(1);
-        graph::Scheme {
+    let mut g = graff::Graph::new({
+        let a = graff::TypeVar(0);
+        let b = graff::TypeVar(1);
+        graff::Scheme {
             vars: vec![a, b],
-            ty: graph::Type::arrow(
-                graph::Type::unit(),
-                graph::Type::tuple(vec![
-                    graph::Type::effect(graph::Type::integer()),
-                    graph::Type::effect(graph::Type::Var(a)),
+            ty: graff::Type::arrow(
+                graff::Type::unit(),
+                graff::Type::tuple(vec![
+                    graff::Type::effect(graff::Type::integer()),
+                    graff::Type::effect(graff::Type::Var(a)),
                 ])
             )
         }
     })?;
 
-    let constant = g.add(graph::Op::Constant(graph::Value::Integer(42)));
-    let add      = g.add(graph::Op::Add);
-    let identity = g.add(graph::Op::Graph(Box::new(g_identity.clone())));
-    let pure     = g.add(graph::Op::Pure);
-    let lambda   = g.add(graph::Op::Pure);
-    let bind     = g.add(graph::Op::Bind);
+    let constant = g.add(graff::Op::Constant(graff::Value::Integer(42)));
+    let add      = g.add(graff::Op::Add);
+    let identity = g.add(graff::Op::Graph(Box::new(g_identity.clone())));
+    let pure     = g.add(graff::Op::Pure);
+    let lambda   = g.add(graff::Op::Pure);
+    let bind     = g.add(graff::Op::Bind);
 
     g.connect(constant, 0,   add,              0);
     g.connect(constant, 0,   add,              1);
@@ -91,7 +89,7 @@ async fn main() -> Result<()> {
     let val = g.evaluate(&[], 0)?;
     log::info!("val0 = {:?}", val);
 
-    if let graph::Value::Effect(effect) = val {
+    if let graff::Value::Effect(effect) = val {
         log::info!("result0 = {:?}", effect.run()?);
     }
 
@@ -99,7 +97,7 @@ async fn main() -> Result<()> {
     let val = g.evaluate(&[], 1)?;
     log::info!("val1 = {:?}", val);
 
-    if let graph::Value::Effect(effect) = val {
+    if let graff::Value::Effect(effect) = val {
         log::info!("result1 = {:?}", effect.run()?);
     }
 
