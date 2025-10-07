@@ -36,6 +36,24 @@ async fn main() -> Result<()> {
 
     // graph stuff
 
+    let mut libstd = graff::Library::default();
+    libstd.insert("add", graff::Scheme {
+        vars: vec![],
+        ty: graff::Type::arrow(
+            graff::Type::tuple(vec![
+                graff::Type::integer(),
+                graff::Type::integer()
+            ]),
+            graff::Type::singleton(
+                graff::Type::integer()
+            )
+        )
+    }, |inputs| {
+        let x = inputs.require(0)?;
+        let y = inputs.require(1)?;
+        Ok(graff::Value::Integer(x.require_integer()? + y.require_integer()?))
+    });
+
     let mut g_identity = graff::Graph::new({
         let a = graff::TypeVar(0);
         graff::Scheme {
@@ -47,14 +65,28 @@ async fn main() -> Result<()> {
         }
     })?;
     g_identity.connect(g_identity.get_input(0)?, 0, g_identity.get_output(0)?, 0);
-
     g_identity.type_check()?;
+
+    let mut g_bad_identity = graff::Graph::new({
+        let a = graff::TypeVar(0);
+        graff::Scheme {
+            vars: vec![a],
+            ty: graff::Type::arrow(
+                graff::Type::singleton(graff::Type::Var(a)),
+                graff::Type::tuple(vec![
+                    graff::Type::unit(),
+                    graff::Type::Var(a)
+                ])
+            )
+        }
+    })?;
+    g_bad_identity.connect(g_bad_identity.get_input(0)?, 0, g_bad_identity.get_output(1)?, 0);
+    g_bad_identity.type_check()?;
 
     let mut g = graff::Graph::new({
         let a = graff::TypeVar(0);
-        let b = graff::TypeVar(1);
         graff::Scheme {
-            vars: vec![a, b],
+            vars: vec![a],
             ty: graff::Type::arrow(
                 graff::Type::unit(),
                 graff::Type::tuple(vec![
@@ -66,23 +98,26 @@ async fn main() -> Result<()> {
     })?;
 
     let constant = g.add(graff::Op::Constant(graff::Value::Integer(42)));
-    let add      = g.add(graff::Op::Add);
-    let identity = g.add(graff::Op::Graph(Box::new(g_identity.clone())));
+    let add1     = g.add(graff::Op::Add);
+    let identity = g.add(g_identity.into());
+    let bad_identity = g.add(g_bad_identity.into());
     let pure     = g.add(graff::Op::Pure);
     let lambda   = g.add(graff::Op::Pure);
     let bind     = g.add(graff::Op::Bind);
+    let add2     = g.add(libstd.prototype("add")?.into());
 
-    g.connect(constant, 0,   add,              0);
-    g.connect(constant, 0,   add,              1);
+    g.connect(constant, 0,   add2,             0);
+    g.connect(constant, 0,   add2,             1);
 
-    g.connect(add,      0,   identity,         0);
-    g.connect(identity, 0,   pure,             0);
+    g.connect(add2,     0,   bad_identity,         0);
+    g.connect(bad_identity, 1,   pure,             0);
     g.connect(pure,     0,   g.get_output(0)?, 0);
     g.connect(pure,     0,   bind,             0);
     g.connect_lambda(lambda, bind,             1);
     g.connect(bind,     0,   g.get_output(1)?, 0);
 
     g.type_check()?;
+    g.link(&libstd);
 
 
 
