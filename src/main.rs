@@ -37,7 +37,7 @@ async fn main() -> Result<()> {
     // graph stuff
 
     let mut libstd = graff::Library::default();
-    libstd.insert("add", graff::Scheme {
+    libstd.insert_external("add", graff::Scheme {
         vars: vec![],
         ty: graff::Type::arrow(
             graff::Type::tuple(vec![
@@ -48,7 +48,7 @@ async fn main() -> Result<()> {
                 graff::Type::integer()
             )
         )
-    }, |inputs| {
+    }, |inputs, _| {
         let x = inputs.require(0)?;
         let y = inputs.require(1)?;
         Ok(graff::Value::Integer(x.require_integer()? + y.require_integer()?))
@@ -66,6 +66,7 @@ async fn main() -> Result<()> {
     })?;
     g_identity.connect(g_identity.get_input(0)?, 0, g_identity.get_output(0)?, 0);
     g_identity.type_check()?;
+    libstd.insert_graph("identity", g_identity);
 
     let mut g_bad_identity = graff::Graph::new({
         let a = graff::TypeVar(0);
@@ -99,7 +100,7 @@ async fn main() -> Result<()> {
 
     let constant = g.add(graff::Op::Constant(graff::Value::Integer(42)));
     let add1     = g.add(graff::Op::Add);
-    let identity = g.add(g_identity.into());
+    let identity = g.add(libstd.prototype("identity")?.into());
     let bad_identity = g.add(g_bad_identity.into());
     let pure     = g.add(graff::Op::Pure);
     let lambda   = g.add(graff::Op::Pure);
@@ -109,8 +110,8 @@ async fn main() -> Result<()> {
     g.connect(constant, 0,   add2,             0);
     g.connect(constant, 0,   add2,             1);
 
-    g.connect(add2,     0,   bad_identity,         0);
-    g.connect(bad_identity, 1,   pure,             0);
+    g.connect(add2,     0,   identity,         0);
+    g.connect(identity, 0,   pure,             0);
     g.connect(pure,     0,   g.get_output(0)?, 0);
     g.connect(pure,     0,   bind,             0);
     g.connect_lambda(lambda, bind,             1);
