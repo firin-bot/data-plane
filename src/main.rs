@@ -37,66 +37,22 @@ async fn main() -> Result<()> {
     // graph stuff
 
     let mut libstd = graff::Library::default();
-    libstd.insert_external("add", graff::Scheme {
-        vars: vec![],
-        ty: graff::Type::arrow(
-            graff::Type::tuple(vec![
-                graff::Type::integer(),
-                graff::Type::integer()
-            ]),
-            graff::Type::singleton(
-                graff::Type::integer()
-            )
-        )
-    }, |inputs, _| {
+    libstd.insert_external("add", graff::scheme!((Integer, Integer) -> (Integer)), |inputs, _| {
         let x = inputs.require(0)?;
         let y = inputs.require(1)?;
         Ok(graff::Value::Integer(x.require_integer()? + y.require_integer()?))
     });
 
-    let mut g_identity = graff::Graph::new({
-        let a = graff::TypeVar(0);
-        graff::Scheme {
-            vars: vec![a],
-            ty: graff::Type::arrow(
-                graff::Type::singleton(graff::Type::Var(a)),
-                graff::Type::singleton(graff::Type::Var(a))
-            )
-        }
-    })?;
+    let mut g_identity = graff::Graph::new(graff::scheme!(forall a. (a) -> (a)))?;
     g_identity.connect(g_identity.get_input(0)?, 0, g_identity.get_output(0)?, 0);
     g_identity.type_check()?;
     libstd.insert_graph("identity", g_identity);
 
-    let mut g_bad_identity = graff::Graph::new({
-        let a = graff::TypeVar(0);
-        graff::Scheme {
-            vars: vec![a],
-            ty: graff::Type::arrow(
-                graff::Type::singleton(graff::Type::Var(a)),
-                graff::Type::tuple(vec![
-                    graff::Type::unit(),
-                    graff::Type::Var(a)
-                ])
-            )
-        }
-    })?;
+    let mut g_bad_identity = graff::Graph::new(graff::scheme!(forall a. (a) -> ((), a)))?;
     g_bad_identity.connect(g_bad_identity.get_input(0)?, 0, g_bad_identity.get_output(1)?, 0);
     g_bad_identity.type_check()?;
 
-    let mut g = graff::Graph::new({
-        let a = graff::TypeVar(0);
-        graff::Scheme {
-            vars: vec![a],
-            ty: graff::Type::arrow(
-                graff::Type::unit(),
-                graff::Type::tuple(vec![
-                    graff::Type::effect(graff::Type::integer()),
-                    graff::Type::effect(graff::Type::Var(a)),
-                ])
-            )
-        }
-    })?;
+    let mut g = graff::Graph::new(graff::scheme!(forall a. () -> (Effect Integer, Effect a)))?;
 
     let constant = g.add(graff::Op::Constant(graff::Value::Integer(42)));
     let add1     = g.add(graff::Op::Add);
